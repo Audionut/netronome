@@ -1042,24 +1042,24 @@ func (s *PacketLossService) runMTRTest(monitor *PacketLossMonitor) (*probing.Sta
 	// Helper function to run MTR with proper cleanup
 	runMTRCommand := func(args []string, platformFlag string) ([]byte, error) {
 		cmd := exec.CommandContext(ctx, "mtr", args...)
-		
+
 		// Configure platform-specific process attributes
 		configureMTRCommand(cmd)
-		
+
 		var stdout io.ReadCloser
 		var err error
-		
+
 		// Get stdout pipe for both platforms
 		stdout, err = cmd.StdoutPipe()
 		if err != nil {
 			return nil, fmt.Errorf("failed to get stdout pipe: %w", err)
 		}
-		
+
 		// Start the command
 		if err := cmd.Start(); err != nil {
 			return nil, fmt.Errorf("failed to start MTR: %w", err)
 		}
-		
+
 		// Log the process start
 		log.Info().
 			Int("pid", cmd.Process.Pid).
@@ -1067,10 +1067,10 @@ func (s *PacketLossService) runMTRTest(monitor *PacketLossMonitor) (*probing.Sta
 			Str("host", monitor.Host).
 			Strs("args", args).
 			Msg("Started MTR process")
-		
+
 		// Track if the command completed successfully
 		var commandCompleted bool
-		
+
 		// Ensure cleanup on function exit
 		defer func() {
 			// Only try to kill the process if it didn't complete successfully
@@ -1083,29 +1083,29 @@ func (s *PacketLossService) runMTRTest(monitor *PacketLossMonitor) (*probing.Sta
 				}
 			}
 		}()
-		
+
 		// Create channels for output and errors
 		outputChan := make(chan []byte, 1)
 		errChan := make(chan error, 1)
-		
+
 		// Run command in goroutine
 		go func() {
 			defer close(outputChan)
 			defer close(errChan)
-			
+
 			// Read all output from stdout
 			output, readErr := io.ReadAll(stdout)
-			
+
 			// Wait for command to finish
 			waitErr := cmd.Wait()
 			if waitErr != nil {
 				errChan <- fmt.Errorf("command failed: %w", waitErr)
 				return
 			}
-			
+
 			// Mark command as completed successfully
 			commandCompleted = true
-			
+
 			// On Windows, parse the text output and convert to JSON
 			// On Unix, the output is already JSON
 			if platformFlag == "windows" {
@@ -1129,7 +1129,7 @@ func (s *PacketLossService) runMTRTest(monitor *PacketLossMonitor) (*probing.Sta
 				}
 			}
 		}()
-		
+
 		// Wait for completion or timeout
 		select {
 		case <-ctx.Done():
@@ -1139,7 +1139,7 @@ func (s *PacketLossService) runMTRTest(monitor *PacketLossMonitor) (*probing.Sta
 				Str("host", monitor.Host).
 				Int("timeout_seconds", monitor.PacketCount*3).
 				Msg("MTR command timed out, killing process group")
-			
+
 			if cmd.Process != nil {
 				pid := cmd.Process.Pid
 				if err := killMTRProcessGroup(pid); err != nil {
@@ -1155,7 +1155,7 @@ func (s *PacketLossService) runMTRTest(monitor *PacketLossMonitor) (*probing.Sta
 						Msg("Successfully killed MTR process group")
 				}
 			}
-			
+
 			// Wait briefly for the goroutine to finish after kill
 			select {
 			case <-errChan:
@@ -1189,7 +1189,7 @@ func (s *PacketLossService) runMTRTest(monitor *PacketLossMonitor) (*probing.Sta
 			if buildErr != nil {
 				return nil, fmt.Errorf("failed to build retry MTR arguments: %w", buildErr)
 			}
-			
+
 			output, err = runMTRCommand(retryArgs, retryPlatformFlag)
 			if err != nil {
 				return nil, fmt.Errorf("MTR failed in both ICMP and UDP modes: %w", err)
