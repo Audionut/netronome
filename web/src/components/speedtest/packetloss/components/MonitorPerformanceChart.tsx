@@ -24,8 +24,8 @@ interface MonitorPerformanceChartProps {
 export const MonitorPerformanceChart: React.FC<
   MonitorPerformanceChartProps
 > = ({ historyList, selectedMonitorId }) => {
-  // Prepare chart data and calculate RTT domain - use useMemo to ensure it updates when historyList changes
-  const { chartData, rttDomain } = useMemo(() => {
+  // Prepare chart data - use useMemo to ensure it updates when historyList changes
+  const chartData = useMemo(() => {
     // historyList is in descending order (newest first), so take first 30 and reverse
     const data = historyList
       .slice(0, 30) // First 30 results (most recent)
@@ -48,25 +48,7 @@ export const MonitorPerformanceChart: React.FC<
         };
       });
 
-    // Calculate RTT domain to center around average with appropriate padding
-    let rttDomainCalculated: [number, number] = [0, 100];
-    if (data.length > 0) {
-      const allRttValues = data.flatMap(d => [d.avgRtt, d.minRtt, d.maxRtt]);
-      const minRtt = Math.min(...allRttValues);
-      const maxRtt = Math.max(...allRttValues);
-      const avgRtt = data.reduce((sum, d) => sum + d.avgRtt, 0) / data.length;
-      
-      // Create padding around the average RTT
-      const range = maxRtt - minRtt;
-      const padding = Math.max(range * 0.2, avgRtt * 0.1); // 20% of range or 10% of avg, whichever is larger
-      
-      const domainMin = Math.max(0, avgRtt - Math.max(avgRtt - minRtt, padding));
-      const domainMax = avgRtt + Math.max(maxRtt - avgRtt, padding);
-      
-      rttDomainCalculated = [Math.floor(domainMin), Math.ceil(domainMax)];
-    }
-
-    return { chartData: data, rttDomain: rttDomainCalculated };
+    return data;
   }, [historyList]);
 
   if (chartData.length === 0) {
@@ -130,7 +112,6 @@ export const MonitorPerformanceChart: React.FC<
               fontSize={11}
               axisLine={false}
               tickLine={false}
-              domain={rttDomain}
               label={{
                 value: "RTT (ms)",
                 angle: -90,
