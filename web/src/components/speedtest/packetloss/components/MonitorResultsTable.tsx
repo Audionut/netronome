@@ -9,6 +9,8 @@ import { ChevronUpDownIcon } from "@heroicons/react/24/solid";
 import { PacketLossResult, PacketLossMonitor } from "@/types/types";
 import { MTRResultsDisplay } from "./MTRResultsDisplay";
 import { formatRTT, parseMTRData } from "../utils/packetLossUtils";
+import { formatDateWithTimezone } from "@/utils/timezone";
+import { useTimezoneSettings } from "@/hooks/useTimezoneSettings";
 
 interface MonitorResultsTableProps {
   historyList: PacketLossResult[];
@@ -19,6 +21,7 @@ export const MonitorResultsTable: React.FC<MonitorResultsTableProps> = ({
   historyList,
   selectedMonitor,
 }) => {
+  const timezoneSettings = useTimezoneSettings();
   const [expandedRows, setExpandedRows] = useState<Set<number>>(new Set());
   const [displayCount, setDisplayCount] = useState(10);
 
@@ -35,12 +38,12 @@ export const MonitorResultsTable: React.FC<MonitorResultsTableProps> = ({
   };
 
   const formatDate = (dateStr: string) => {
-    const date = new Date(dateStr);
-    const month = date.toLocaleDateString("en-US", { month: "short" });
-    const day = date.getDate();
-    const hours = date.getHours().toString().padStart(2, "0");
-    const minutes = date.getMinutes().toString().padStart(2, "0");
-    return `${month} ${day}, ${hours}:${minutes}`;
+    return formatDateWithTimezone(dateStr, {
+      month: "short",
+      day: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    }, timezoneSettings);
   };
 
   return (

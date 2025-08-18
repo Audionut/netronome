@@ -13,6 +13,8 @@ import {
   Tooltip,
   ResponsiveContainer,
 } from "recharts";
+import { formatChartTimestamp, formatTimestamp } from "@/utils/timezone";
+import { useTimezoneSettings } from "@/hooks/useTimezoneSettings";
 import { SpeedTestResult, TimeRange, PaginatedResponse } from "@/types/types";
 import { useInfiniteQuery } from "@tanstack/react-query";
 import { getHistory, getPublicHistory } from "@/api/speedtest";
@@ -38,8 +40,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Checkbox } from "@/components/ui/checkbox";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
 
 interface SpeedHistoryChartProps {
@@ -52,13 +52,6 @@ interface SpeedHistoryChartProps {
   dragHandleRef?: (node: HTMLElement | null) => void;
   dragHandleListeners?: Record<string, (...args: unknown[]) => unknown>;
   dragHandleClassName?: string;
-  // Server filtering props
-  serverFilterMode?: "all" | "single" | "multiple";
-  selectedSingleServer?: string;
-  selectedMultipleServers?: Set<string>;
-  onServerFilterModeChange?: (mode: "all" | "single" | "multiple") => void;
-  onSelectedSingleServerChange?: (server: string) => void;
-  onSelectedMultipleServersChange?: (servers: Set<string>) => void;
 }
 
 interface VisibleMetrics {
@@ -114,15 +107,9 @@ export const SpeedHistoryChart: React.FC<SpeedHistoryChartProps> = ({
   dragHandleRef,
   dragHandleListeners,
   dragHandleClassName,
-  // Server filtering props
-  serverFilterMode: propServerFilterMode,
-  selectedSingleServer: propSelectedSingleServer,
-  selectedMultipleServers: propSelectedMultipleServers,
-  onServerFilterModeChange,
-  onSelectedSingleServerChange,
-  onSelectedMultipleServersChange,
 }) => {
   const isMobile = useIsMobile();
+  const timezoneSettings = useTimezoneSettings();
 
   const [visibleMetrics, setVisibleMetrics] = useState<VisibleMetrics>(() => {
     const saved = localStorage.getItem("speedtest-visible-metrics");
@@ -135,16 +122,6 @@ export const SpeedHistoryChart: React.FC<SpeedHistoryChartProps> = ({
           jitter: true,
         };
   });
-
-  // Server filtering state - use props if provided, otherwise internal state
-  const [internalServerFilterMode, setInternalServerFilterMode] = useState<"all" | "single" | "multiple">("all");
-  const [internalSelectedSingleServer, setInternalSelectedSingleServer] = useState<string>("all");
-  const [internalSelectedMultipleServers, setInternalSelectedMultipleServers] = useState<Set<string>>(new Set());
-
-  // Use props if provided, otherwise use internal state
-  const serverFilterMode = propServerFilterMode ?? internalServerFilterMode;
-  const selectedSingleServer = propSelectedSingleServer ?? internalSelectedSingleServer;
-  const selectedMultipleServers = propSelectedMultipleServers ?? internalSelectedMultipleServers;
 
   const handleMetricToggle = (key: keyof VisibleMetrics) => {
     setVisibleMetrics((prev: VisibleMetrics) => {
@@ -208,12 +185,7 @@ export const SpeedHistoryChart: React.FC<SpeedHistoryChartProps> = ({
       )
       .map((item) => ({
         rawTimestamp: item.createdAt,
-        timestamp: new Date(item.createdAt).toLocaleString(undefined, {
-          month: "short",
-          day: "numeric",
-          hour: "numeric",
-          minute: "numeric",
-        }),
+        timestamp: formatTimestamp(item.createdAt, timezoneSettings),
         download: Number(item.downloadSpeed) || 0,
         upload: Number(item.uploadSpeed) || 0,
         latency: Number(parseFloat(item.latency?.replace("ms", "")) || 0),
@@ -231,77 +203,6 @@ export const SpeedHistoryChart: React.FC<SpeedHistoryChartProps> = ({
       );
   }, [data]);
 
-  // Extract available servers from results
-  const availableServers = useMemo(() => {
-    if (!filteredData || filteredData.length === 0) return [];
-    
-    const serverMap = new Map();
-    filteredData.forEach(result => {
-      if (result.serverName && !serverMap.has(result.serverName)) {
-        serverMap.set(result.serverName, {
-          id: result.serverName,
-          name: result.serverName,
-          host: result.serverHost || result.serverName
-        });
-      }
-    });
-    
-    return Array.from(serverMap.values());
-  }, [filteredData]);
-
-  // Apply server filtering
-  const allResults = useMemo(() => {
-    if (serverFilterMode === "single" && selectedSingleServer !== "all") {
-      const filtered = filteredData.filter(result => result.serverName === selectedSingleServer);
-      return filtered;
-    } else if (serverFilterMode === "multiple" && selectedMultipleServers.size > 0) {
-      const filtered = filteredData.filter(result => selectedMultipleServers.has(result.serverName));
-      return filtered;
-    }
-    
-    return filteredData;
-  }, [filteredData, serverFilterMode, selectedSingleServer, selectedMultipleServers]);
-
-  // Server filter handlers
-  const handleServerDropdownChange = (value: string) => {
-    
-    if (value === "all") {
-      if (onServerFilterModeChange) onServerFilterModeChange("all");
-      else setInternalServerFilterMode("all");
-      
-      if (onSelectedSingleServerChange) onSelectedSingleServerChange("all");
-      else setInternalSelectedSingleServer("all");
-    } else if (value === "multiple") {
-      if (onServerFilterModeChange) onServerFilterModeChange("multiple");
-      else setInternalServerFilterMode("multiple");
-    } else {
-      if (onServerFilterModeChange) onServerFilterModeChange("single");
-      else setInternalServerFilterMode("single");
-      
-      if (onSelectedSingleServerChange) onSelectedSingleServerChange(value);
-      else setInternalSelectedSingleServer(value);
-    }
-  };
-
-  const handleServerCheckboxChange = (serverId: string, checked: boolean) => {
-    const updateFunction = (prev: Set<string>) => {
-      const newSet = new Set(prev);
-      if (checked) {
-        newSet.add(serverId);
-      } else {
-        newSet.delete(serverId);
-      }
-      return newSet;
-    };
-
-    if (onSelectedMultipleServersChange) {
-      const newSet = updateFunction(selectedMultipleServers);
-      onSelectedMultipleServersChange(newSet);
-    } else {
-      setInternalSelectedMultipleServers(updateFunction);
-    }
-  };
-
   const handleTimeRangeChange = (range: TimeRange) => {
     localStorage.setItem("speedtest-time-range", range);
     onTimeRangeChange(range);
@@ -311,8 +212,8 @@ export const SpeedHistoryChart: React.FC<SpeedHistoryChartProps> = ({
     () => (
       <ResponsiveContainer width="100%" height="100%">
         <AreaChart
-          key={`${timeRange}-${allResults.length}`}
-          data={allResults}
+          key={`${timeRange}-${filteredData.length}`}
+          data={filteredData}
           margin={
             isMobile
               ? { top: 5, right: 5, left: 0, bottom: 5 }
@@ -350,91 +251,7 @@ export const SpeedHistoryChart: React.FC<SpeedHistoryChartProps> = ({
             tickMargin={isMobile ? 5 : 10}
             tick={{ fontSize: isMobile ? 11 : 12, fill: "var(--chart-text)" }}
             tickFormatter={(value) => {
-              const date = new Date(value);
-
-              // Dynamic formatting based on time range
-              switch (timeRange) {
-                case "1d":
-                  // 24 hours: show time, with day name on desktop
-                  if (isMobile) {
-                    return date.toLocaleTimeString(undefined, {
-                      hour: "numeric",
-                      minute: "2-digit",
-                    });
-                  }
-                  return date.toLocaleString(undefined, {
-                    weekday: "short",
-                    hour: "numeric",
-                    minute: "2-digit",
-                  });
-
-                case "3d":
-                  // 3 days: show day and time
-                  if (isMobile) {
-                    return date.toLocaleString(undefined, {
-                      weekday: "short",
-                      hour: "numeric",
-                    });
-                  }
-                  return date.toLocaleString(undefined, {
-                    weekday: "short",
-                    hour: "numeric",
-                    minute: "2-digit",
-                  });
-
-                case "1w":
-                  // 1 week: show date with optional time on desktop
-                  if (isMobile) {
-                    return date.toLocaleString(undefined, {
-                      month: "numeric",
-                      day: "numeric",
-                    });
-                  }
-                  return date.toLocaleString(undefined, {
-                    weekday: "short",
-                    month: "short",
-                    day: "numeric",
-                  });
-
-                case "1m":
-                  // 1 month: show date
-                  if (isMobile) {
-                    return date.toLocaleString(undefined, {
-                      month: "short",
-                      day: "numeric",
-                    });
-                  }
-                  return date.toLocaleString(undefined, {
-                    month: "short",
-                    day: "numeric",
-                  });
-
-                case "all": {
-                  // All time: show date with year if needed
-                  const now = new Date();
-                  const showYear = date.getFullYear() !== now.getFullYear();
-
-                  if (isMobile) {
-                    return date.toLocaleString(undefined, {
-                      month: "short",
-                      day: "numeric",
-                      year: showYear ? "2-digit" : undefined,
-                    });
-                  }
-                  return date.toLocaleString(undefined, {
-                    month: "short",
-                    day: "numeric",
-                    year: showYear ? "numeric" : undefined,
-                  });
-                }
-
-                default:
-                  // Fallback to time-based format
-                  return date.toLocaleTimeString(undefined, {
-                    hour: "numeric",
-                    minute: "2-digit",
-                  });
-              }
+              return formatChartTimestamp(value, timeRange, isMobile, timezoneSettings);
             }}
           />
           <YAxis
@@ -537,12 +354,7 @@ export const SpeedHistoryChart: React.FC<SpeedHistoryChartProps> = ({
 
                 const formattedDate =
                   data.timestamp ||
-                  new Date(label).toLocaleString(undefined, {
-                    month: "short",
-                    day: "numeric",
-                    hour: "numeric",
-                    minute: "numeric",
-                  });
+                  formatTimestamp(label, timezoneSettings);
 
                 return (
                   <>
@@ -660,7 +472,7 @@ export const SpeedHistoryChart: React.FC<SpeedHistoryChartProps> = ({
         </AreaChart>
       </ResponsiveContainer>
     ),
-    [allResults, timeRange, visibleMetrics, isMobile, isPublic, availableServers]
+    [filteredData, timeRange, visibleMetrics, isMobile, isPublic]
   );
 
   const [isOpen, setIsOpen] = useState(() => {
@@ -822,70 +634,7 @@ export const SpeedHistoryChart: React.FC<SpeedHistoryChartProps> = ({
                   </div>
 
                   {/* Desktop layout - Time Range Controls alongside metrics */}
-                  <div className="hidden sm:flex sm:justify-end sm:-mt-12 sm:gap-3">
-                    {/* Server Filter Controls */}
-                    <div className="flex items-center gap-3">
-                      <span className="text-xs text-gray-600 dark:text-gray-400 font-medium">Server:</span>
-                      
-                      {/* Server Selection Dropdown */}
-                      <Select
-                        value={serverFilterMode === "multiple" ? "multiple" : selectedSingleServer}
-                        onValueChange={handleServerDropdownChange}
-                      >
-                        <SelectTrigger className="w-[180px] px-3 py-1.5 text-xs">
-                          <SelectValue placeholder="Select servers..." />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="all">All servers</SelectItem>
-                          <SelectItem value="multiple">Select multiple...</SelectItem>
-                          {availableServers.map((server) => (
-                            <SelectItem key={server.id} value={server.id}>
-                              {server.name}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-
-                      {/* Multiple Server Selection Popover */}
-                      {serverFilterMode === "multiple" && (
-                        <Popover>
-                          <PopoverTrigger asChild>
-                            <Button variant="outline" size="sm" className="text-xs">
-                              Multiple ({selectedMultipleServers.size})
-                            </Button>
-                          </PopoverTrigger>
-                          <PopoverContent className="w-64 p-3">
-                            <div className="space-y-2">
-                              <div className="font-medium text-sm">Select Servers:</div>
-                              {availableServers.length > 0 ? (
-                                <div className="space-y-2 max-h-48 overflow-y-auto">
-                                  {availableServers.map((server) => (
-                                    <div key={server.id} className="flex items-center space-x-2 p-1 hover:bg-gray-100 dark:hover:bg-gray-800 rounded">
-                                      <Checkbox
-                                        id={server.id}
-                                        checked={selectedMultipleServers.has(server.id)}
-                                        onCheckedChange={(checked) => {
-                                          handleServerCheckboxChange(server.id, checked as boolean);
-                                        }}
-                                      />
-                                      <label htmlFor={server.id} className="text-sm cursor-pointer flex-1">
-                                        {server.name}
-                                      </label>
-                                    </div>
-                                  ))}
-                                </div>
-                              ) : (
-                                <div className="text-sm text-gray-500">
-                                  No servers available
-                                </div>
-                              )}
-                            </div>
-                          </PopoverContent>
-                        </Popover>
-                      )}
-                    </div>
-
-                    {/* Time Range */}
+                  <div className="hidden sm:flex sm:justify-end sm:-mt-12">
                     <Select
                       value={timeRange}
                       onValueChange={handleTimeRangeChange}

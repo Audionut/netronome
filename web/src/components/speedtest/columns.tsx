@@ -12,6 +12,7 @@ import {
   createRightAlignedSortableHeader,
 } from "@/components/ui/data-table";
 import { cn } from "@/lib/utils";
+import { formatDateWithTimezone } from "@/utils/timezone";
 
 // Helper function to format speed
 const formatSpeed = (speed: number) => {
@@ -53,7 +54,7 @@ export const speedTestColumns: ColumnDef<SpeedTestResult>[] = [
       const date = new Date(row.getValue("createdAt"));
       return (
         <span className="text-gray-700 dark:text-gray-300">
-          {date.toLocaleString(undefined, {
+          {formatDateWithTimezone(date, {
             month: "short",
             day: "numeric",
             hour: "2-digit",
@@ -171,7 +172,7 @@ export const speedTestMobileColumns: ColumnDef<SpeedTestResult>[] = [
             </span>
           </div>
           <div className="text-gray-600 dark:text-gray-400 text-sm">
-            {new Date(test.createdAt).toLocaleString(undefined, {
+            {formatDateWithTimezone(test.createdAt, {
               month: "short",
               day: "numeric",
               hour: "2-digit",
