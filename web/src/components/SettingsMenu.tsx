@@ -4,9 +4,8 @@
  */
 
 import React, { useState } from "react";
-import { Cog6ToothIcon, BellIcon, ClockIcon } from "@heroicons/react/24/outline";
+import { Cog6ToothIcon, BellIcon } from "@heroicons/react/24/outline";
 import { NotificationSettings } from "./settings/NotificationSettings";
-import { TimezoneSettings } from "./settings/TimezoneSettings";
 import { Button } from "@/components/ui/Button";
 import {
   Dialog,
@@ -34,12 +33,6 @@ const settingsSections: SettingsSection[] = [
     label: "Notifications",
     icon: <BellIcon className="w-4 h-4" />,
     component: NotificationSettings,
-  },
-  {
-    id: "timezone",
-    label: "Timezone",
-    icon: <ClockIcon className="w-4 h-4" />,
-    component: TimezoneSettings,
   },
 ];
 

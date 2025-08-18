@@ -5,14 +5,12 @@
 
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { motion } from "motion/react";
 import { SpeedTestResult, TimeRange } from "@/types/types";
 import { SpeedHistoryChart } from "./SpeedHistoryChart";
 import { MetricCard } from "@/components/common/MetricCard";
 import { FeaturedMonitorWidget } from "@/components/monitor/FeaturedMonitorWidget";
-import { formatTimestamp } from "@/utils/timezone";
-import { useTimezoneSettings } from "@/hooks/useTimezoneSettings";
 import {
   FaWaveSquare,
   FaArrowDown,
@@ -120,6 +118,13 @@ interface DraggableSpeedHistoryChartProps {
   dragHandleRef?: (node: HTMLElement | null) => void;
   dragHandleListeners?: Record<string, (...args: unknown[]) => unknown>;
   dragHandleClassName?: string;
+  // Server filtering props
+  serverFilterMode: "all" | "single" | "multiple";
+  selectedSingleServer: string;
+  selectedMultipleServers: Set<string>;
+  onServerFilterModeChange: (mode: "all" | "single" | "multiple") => void;
+  onSelectedSingleServerChange: (server: string) => void;
+  onSelectedMultipleServersChange: (servers: Set<string>) => void;
 }
 
 const DraggableSpeedHistoryChart: React.FC<DraggableSpeedHistoryChartProps> = ({
@@ -157,7 +162,6 @@ export const DashboardTab: React.FC<DashboardTabProps> = ({
   onNavigateToSpeedTest,
   onNavigateToVnstat,
 }) => {
-  const timezoneSettings = useTimezoneSettings();
   const [displayCount, setDisplayCount] = useState(5);
   const [isRecentTestsOpen, setIsRecentTestsOpen] = useState(() => {
     const saved = localStorage.getItem("recent-tests-open");
@@ -172,6 +176,11 @@ export const DashboardTab: React.FC<DashboardTabProps> = ({
 
   // State for share button hover
   const [isShareHovered, setIsShareHovered] = useState(false);
+
+  // Server filtering state
+  const [serverFilterMode, setServerFilterMode] = useState<"all" | "single" | "multiple">("all");
+  const [selectedSingleServer, setSelectedSingleServer] = useState<string>("all");
+  const [selectedMultipleServers, setSelectedMultipleServers] = useState<Set<string>>(new Set());
 
   // Initialize drag sensors
   const sensors = useSensors(
@@ -196,10 +205,26 @@ export const DashboardTab: React.FC<DashboardTabProps> = ({
 
   const displayedTests = tests.slice(0, displayCount);
 
-  const calculateAverage = (field: keyof SpeedTestResult): string => {
-    if (tests.length === 0) return "N/A";
+  // Apply server filtering to tests (same logic as in SpeedHistoryChart)
+  const filteredDisplayTests = useMemo(() => {
+    if (serverFilterMode === "single" && selectedSingleServer !== "all") {
+      return tests.filter(test => test.serverName === selectedSingleServer);
+    } else if (serverFilterMode === "multiple" && selectedMultipleServers.size > 0) {
+      return tests.filter(test => selectedMultipleServers.has(test.serverName));
+    }
+    return tests;
+  }, [tests, serverFilterMode, selectedSingleServer, selectedMultipleServers]);
 
-    const validValues = tests
+  // Get the latest test from filtered results
+  const filteredLatestTestComputed = useMemo(() => {
+    return filteredDisplayTests.length > 0 ? filteredDisplayTests[filteredDisplayTests.length - 1] : null;
+  }, [filteredDisplayTests]);
+
+  const calculateAverage = (field: keyof SpeedTestResult): string => {
+    const dataToUse = filteredDisplayTests.length > 0 ? filteredDisplayTests : tests;
+    if (dataToUse.length === 0) return "N/A";
+
+    const validValues = dataToUse
       .map((test) => {
         const value = test[field];
         if (typeof value === "string") {
@@ -299,8 +324,11 @@ export const DashboardTab: React.FC<DashboardTabProps> = ({
           <div className="flex justify-between ml-1 items-center text-gray-600 dark:text-gray-400 text-sm mb-4">
             <div>
               Last test run:{" "}
-              {latestTest?.createdAt
-                ? formatTimestamp(latestTest.createdAt, timezoneSettings)
+              {(filteredLatestTestComputed || latestTest)?.createdAt
+                ? new Date((filteredLatestTestComputed || latestTest)!.createdAt).toLocaleString(undefined, {
+                    dateStyle: "short",
+                    timeStyle: "short",
+                  })
                 : "N/A"}
             </div>
           </div>
@@ -308,31 +336,31 @@ export const DashboardTab: React.FC<DashboardTabProps> = ({
             <MetricCard
               icon={<IoIosPulse className="w-5 h-5 text-amber-500" />}
               title="Latency"
-              value={parseFloat(latestTest.latency).toFixed(2)}
+              value={parseFloat((filteredLatestTestComputed || latestTest)!.latency).toFixed(2)}
               unit="ms"
               average={calculateAverage("latency")}
             />
             <MetricCard
               icon={<FaArrowDown className="w-5 h-5 text-blue-500" />}
               title="Download"
-              value={latestTest.downloadSpeed.toFixed(2)}
+              value={(filteredLatestTestComputed || latestTest)!.downloadSpeed.toFixed(2)}
               unit="Mbps"
               average={calculateAverage("downloadSpeed")}
             />
             <MetricCard
               icon={<FaArrowUp className="w-5 h-5 text-emerald-500" />}
               title="Upload"
-              value={latestTest.uploadSpeed.toFixed(2)}
+              value={(filteredLatestTestComputed || latestTest)!.uploadSpeed.toFixed(2)}
               unit="Mbps"
               average={calculateAverage("uploadSpeed")}
             />
             <MetricCard
               icon={<FaWaveSquare className="w-5 h-5 text-purple-400" />}
               title="Jitter"
-              value={latestTest.jitter?.toFixed(2) ?? "N/A"}
+              value={(filteredLatestTestComputed || latestTest)!.jitter?.toFixed(2) ?? "N/A"}
               unit="ms"
               average={
-                latestTest.jitter ? calculateAverage("jitter") : undefined
+                (filteredLatestTestComputed || latestTest)!.jitter ? calculateAverage("jitter") : undefined
               }
             />
 
@@ -389,6 +417,12 @@ export const DashboardTab: React.FC<DashboardTabProps> = ({
                         isPublic={isPublic}
                         hasAnyTests={hasAnyTests}
                         hasCurrentRangeTests={tests.length > 0}
+                        serverFilterMode={serverFilterMode}
+                        selectedSingleServer={selectedSingleServer}
+                        selectedMultipleServers={selectedMultipleServers}
+                        onServerFilterModeChange={setServerFilterMode}
+                        onSelectedSingleServerChange={setSelectedSingleServer}
+                        onSelectedMultipleServersChange={setSelectedMultipleServers}
                       />
                     </SortableItem>
                   );
