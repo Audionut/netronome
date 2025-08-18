@@ -129,6 +129,8 @@ export const MonitorPerformanceChart: React.FC<
               fontSize={11}
               axisLine={false}
               tickLine={false}
+              scale="linear"
+              domain={[0, 100]}
               label={{
                 value: "Packet Loss (%)",
                 angle: 90,
