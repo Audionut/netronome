@@ -1014,7 +1014,7 @@ func (s *PacketLossService) runMTRTest(monitor *PacketLossMonitor) (*probing.Sta
 	}
 
 	// Create timeout context
-	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(monitor.PacketCount*3)*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(monitor.PacketCount*6)*time.Second)
 	defer cancel()
 
 	// Build platform-specific MTR command arguments
@@ -1098,7 +1098,10 @@ func (s *PacketLossService) runMTRTest(monitor *PacketLossMonitor) (*probing.Sta
 
 			// Wait for command to finish
 			waitErr := cmd.Wait()
-			if waitErr != nil {
+
+			if readErr != nil {
+				errChan <- fmt.Errorf("failed to read output: %w", readErr)
+			} else if waitErr != nil {
 				errChan <- fmt.Errorf("command failed: %w", waitErr)
 				return
 			}
