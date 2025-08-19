@@ -590,8 +590,7 @@ export default function Main({ isPublic = false }: MainProps) {
 
         {/* Tab Content */}
         <AnimatePresence mode="wait">
-          {(activeTab === "dashboard" || isPublic) && (() => {
-            return (
+          {(activeTab === "dashboard" || isPublic) && (
             <motion.div
               key="dashboard"
               initial={{ opacity: 0, y: 20 }}
@@ -619,8 +618,7 @@ export default function Main({ isPublic = false }: MainProps) {
                 }}
               />
             </motion.div>
-            );
-          })()}
+            )}
 
           {!isPublic && activeTab === "speedtest" && (
             <motion.div
