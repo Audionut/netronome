@@ -14,21 +14,56 @@ import {
   Tooltip,
   ResponsiveContainer,
 } from "recharts";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { PacketLossResult } from "@/types/types";
+
+// Define filter range type for performance charts
+export type PerformanceTimeRange = "10" | "30" | "50" | "100" | "all";
 
 interface MonitorPerformanceChartProps {
   historyList: PacketLossResult[];
   selectedMonitorId: number;
+  timeRange?: PerformanceTimeRange;
+  onTimeRangeChange?: (range: PerformanceTimeRange) => void;
 }
 
 export const MonitorPerformanceChart: React.FC<
   MonitorPerformanceChartProps
-> = ({ historyList, selectedMonitorId }) => {
-  // Prepare chart data - use useMemo to ensure it updates when historyList changes
+> = ({ historyList, selectedMonitorId, timeRange = "30", onTimeRangeChange }) => {
+  // Time range options with result counts
+  const timeRangeOptions: { value: PerformanceTimeRange; label: string }[] = [
+    { value: "10", label: "Last 10 results" },
+    { value: "30", label: "Last 30 results" },
+    { value: "50", label: "Last 50 results" },
+    { value: "100", label: "Last 100 results" },
+    { value: "all", label: "All results" },
+  ];
+
+  // Get the number of results to display based on timeRange
+  const getResultCount = (range: PerformanceTimeRange): number => {
+    switch (range) {
+      case "10": return 10;
+      case "30": return 30;
+      case "50": return 50;
+      case "100": return 100;
+      case "all": return historyList.length;
+      default: return 30;
+    }
+  };
+
+  const resultCount = getResultCount(timeRange);
+
+  // Prepare chart data - use useMemo to ensure it updates when historyList or timeRange changes
   const chartData = useMemo(() => {
-    // historyList is in descending order (newest first), so take first 30 and reverse
+    // historyList is in descending order (newest first), so take the specified count and reverse
     const data = historyList
-      .slice(0, 30) // First 30 results (most recent)
+      .slice(0, resultCount) // Take specified number of results (most recent)
       .reverse() // Reverse to show oldest to newest for chart
       .map((result) => {
         const date = new Date(result.createdAt);
@@ -46,7 +81,7 @@ export const MonitorPerformanceChart: React.FC<
       });
 
     return data;
-  }, [historyList]);
+  }, [historyList, resultCount]);
 
   // Calculate RTT statistics for better axis scaling
   const rttStats = useMemo(() => {
@@ -77,12 +112,32 @@ export const MonitorPerformanceChart: React.FC<
   return (
     <div className="mb-6">
       <div className="mb-4">
-        <h3 className="text-gray-700 dark:text-gray-300 font-medium mb-2">
-          Performance Trends
-        </h3>
+        <div className="flex items-center justify-between mb-2">
+          <h3 className="text-gray-700 dark:text-gray-300 font-medium">
+            Performance Trends
+          </h3>
+          {onTimeRangeChange && (
+            <Select value={timeRange} onValueChange={onTimeRangeChange}>
+              <SelectTrigger className="w-[180px] px-3 py-2 bg-gray-200/50 dark:bg-gray-800/50 border border-gray-300 dark:border-gray-900 rounded-lg text-gray-700 dark:text-gray-300">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700">
+                {timeRangeOptions.map((option) => (
+                  <SelectItem
+                    key={option.value}
+                    value={option.value}
+                    className="hover:bg-gray-100 dark:hover:bg-gray-800 focus:bg-gray-100 dark:focus:bg-gray-800 text-gray-900 dark:text-gray-100"
+                  >
+                    {option.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
+        </div>
         <div className="flex items-center justify-between">
           <p className="text-gray-600 dark:text-gray-400 text-xs">
-            Last 30 tests • {chartData.length} data points
+            {timeRange === "all" ? "All tests" : `Last ${resultCount} tests`} • {chartData.length} data points
             {rttStats && (
               <span className="ml-2 text-blue-600 dark:text-blue-400">
                 • Avg RTT: {rttStats.avg.toFixed(1)}ms

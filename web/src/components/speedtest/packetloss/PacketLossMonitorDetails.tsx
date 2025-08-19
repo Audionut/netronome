@@ -3,14 +3,14 @@
  * SPDX-License-Identifier: GPL-2.0-or-later
  */
 
-import React, { useEffect } from "react";
+import React, { useEffect, useState } from "react";
 import { motion } from "motion/react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { GlobeAltIcon } from "@heroicons/react/24/outline";
 import { PacketLossMonitor } from "@/types/types";
 import { getPacketLossHistory } from "@/api/packetloss";
 import { MonitorStatusCard } from "./components/MonitorStatusCard";
-import { MonitorPerformanceChart } from "./components/MonitorPerformanceChart";
+import { MonitorPerformanceChart, PerformanceTimeRange } from "./components/MonitorPerformanceChart";
 import { MonitorResultsTable } from "./components/MonitorResultsTable";
 import { MonitorStatus } from "./types/monitorStatus";
 
@@ -24,6 +24,22 @@ export const PacketLossMonitorDetails: React.FC<
   PacketLossMonitorDetailsProps
 > = ({ selectedMonitor, monitorStatuses, onTraceRoute }) => {
   const queryClient = useQueryClient();
+
+  // Performance chart time range state with localStorage persistence
+  const [performanceTimeRange, setPerformanceTimeRange] = useState<PerformanceTimeRange>(() => {
+    const saved = localStorage.getItem(`monitor-${selectedMonitor.id}-time-range`);
+    return (saved as PerformanceTimeRange) || "30";
+  });
+
+  // Persist time range selection to localStorage
+  useEffect(() => {
+    localStorage.setItem(`monitor-${selectedMonitor.id}-time-range`, performanceTimeRange);
+  }, [performanceTimeRange, selectedMonitor.id]);
+
+  // Handle time range changes
+  const handleTimeRangeChange = (range: PerformanceTimeRange) => {
+    setPerformanceTimeRange(range);
+  };
 
   // Fetch history for selected monitor
   const { data: monitorHistory } = useQuery({
@@ -95,6 +111,8 @@ export const PacketLossMonitorDetails: React.FC<
         <MonitorPerformanceChart
           historyList={historyList}
           selectedMonitorId={selectedMonitor.id}
+          timeRange={performanceTimeRange}
+          onTimeRangeChange={handleTimeRangeChange}
         />
 
         {/* Recent Results */}
