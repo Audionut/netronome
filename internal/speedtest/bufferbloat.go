@@ -37,6 +37,8 @@ type BufferbloatResult struct {
 	UploadBufferbloatPct   float64   `json:"uploadBufferbloatPct"`
 	DownloadSeverity       string    `json:"downloadSeverity"`
 	UploadSeverity         string    `json:"uploadSeverity"`
+	DownloadSpeed          float64   `json:"downloadSpeed"` // Mbps
+	UploadSpeed            float64   `json:"uploadSpeed"`   // Mbps
 	PingTarget             string    `json:"pingTarget"`
 	Timestamp              time.Time `json:"timestamp"`
 }
@@ -85,7 +87,7 @@ func (s *BufferbloatTestService) RunBufferbloatTest(ctx context.Context, pingTar
 		Type:        "bufferbloat",
 		Phase:       "baseline",
 		IsRunning:   false,
-		Progress:    50,
+		Progress:    100,
 		BaselineRTT: baselineStats.AvgRtt.Seconds() * 1000, // Convert to ms
 	})
 
@@ -94,11 +96,10 @@ func (s *BufferbloatTestService) RunBufferbloatTest(ctx context.Context, pingTar
 		Type:        "bufferbloat",
 		Phase:       "download",
 		IsRunning:   true,
-		Progress:    60,
 		BaselineRTT: baselineStats.AvgRtt.Seconds() * 1000,
 	})
 
-	downloadStats, uploadStats, err := s.runSpeedtestWithPingSeparate(ctx, pingTarget, speedtestOpts)
+	downloadStats, uploadStats, downloadSpeed, uploadSpeed, err := s.runSpeedtestWithPingSeparate(ctx, pingTarget, speedtestOpts)
 	if err != nil {
 		s.broadcastUpdate(types.BufferbloatUpdate{
 			Type:        "bufferbloat",
@@ -138,6 +139,8 @@ func (s *BufferbloatTestService) RunBufferbloatTest(ctx context.Context, pingTar
 		UploadBufferbloatPct:   uploadBufferbloatPct,
 		DownloadSeverity:       calculateBufferbloatSeverity(downloadBufferbloat),
 		UploadSeverity:         calculateBufferbloatSeverity(uploadBufferbloat),
+		DownloadSpeed:          downloadSpeed, // Add actual download speed
+		UploadSpeed:            uploadSpeed,   // Add actual upload speed
 		PingTarget:             pingTarget,
 		Timestamp:              time.Now(),
 	}
@@ -256,8 +259,9 @@ func (s *BufferbloatTestService) runPingWithPrivilege(ctx context.Context, targe
 }
 
 // runSpeedtestWithPingSeparate runs speedtest with continuous ICMP ping during both download and upload phases
-func (s *BufferbloatTestService) runSpeedtestWithPingSeparate(ctx context.Context, pingTarget string, speedtestOpts *types.TestOptions) (*probing.Statistics, *probing.Statistics, error) {
+func (s *BufferbloatTestService) runSpeedtestWithPingSeparate(ctx context.Context, pingTarget string, speedtestOpts *types.TestOptions) (*probing.Statistics, *probing.Statistics, float64, float64, error) {
 	var downloadStats, uploadStats *probing.Statistics
+	var downloadSpeed, uploadSpeed float64
 	var wg sync.WaitGroup
 	var testErr error
 	var pingErr error
@@ -277,7 +281,7 @@ func (s *BufferbloatTestService) runSpeedtestWithPingSeparate(ctx context.Contex
 	go func() {
 		defer wg.Done()
 		log.Debug().Msg("Starting speedtest for bufferbloat measurement")
-		
+
 		// Create separate test options for download and upload phases
 		downloadOpts := *speedtestOpts
 		downloadOpts.EnableUpload = false
@@ -292,19 +296,21 @@ func (s *BufferbloatTestService) runSpeedtestWithPingSeparate(ctx context.Contex
 			Type:      "bufferbloat",
 			Phase:     "download",
 			IsRunning: true,
-			Progress:  60,
 		})
 
-		_, err := s.speedtestService.RunTest(downloadCtx, &downloadOpts)
+		downloadResult, err := s.speedtestService.RunTest(downloadCtx, &downloadOpts)
 		if err != nil && err != context.Canceled {
 			testErr = fmt.Errorf("download speedtest failed: %w", err)
 			downloadCancel()
 			return
 		}
+		if downloadResult != nil {
+			downloadSpeed = downloadResult.DownloadSpeed
+		}
 
 		// Signal download phase complete, cancel download ping
 		downloadCancel()
-		
+
 		// Brief pause between phases
 		select {
 		case <-ctx.Done():
@@ -317,14 +323,16 @@ func (s *BufferbloatTestService) runSpeedtestWithPingSeparate(ctx context.Contex
 			Type:      "bufferbloat",
 			Phase:     "upload",
 			IsRunning: true,
-			Progress:  80,
 		})
 
-		_, err = s.speedtestService.RunTest(uploadCtx, &uploadOpts)
+		uploadResult, err := s.speedtestService.RunTest(uploadCtx, &uploadOpts)
 		if err != nil && err != context.Canceled {
 			testErr = fmt.Errorf("upload speedtest failed: %w", err)
 		}
-		
+		if uploadResult != nil {
+			uploadSpeed = uploadResult.UploadSpeed
+		}
+
 		// Signal upload phase complete
 		uploadCancel()
 	}()
@@ -344,13 +352,13 @@ func (s *BufferbloatTestService) runSpeedtestWithPingSeparate(ctx context.Contex
 		}
 	}()
 
-	// Start upload phase ping in a separate goroutine  
+	// Start upload phase ping in a separate goroutine
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
 		// Wait for download phase to complete
 		<-downloadCtx.Done()
-		
+
 		log.Debug().Msg("Starting continuous ping during upload phase")
 		stats, err := s.runContinuousPing(uploadCtx, pingTarget, "upload")
 		if err != nil && err != context.Canceled {
@@ -367,30 +375,30 @@ func (s *BufferbloatTestService) runSpeedtestWithPingSeparate(ctx context.Contex
 
 	// Check for errors
 	if testErr != nil {
-		return nil, nil, testErr
+		return nil, nil, 0.0, 0.0, testErr
 	}
 	if pingErr != nil {
-		return nil, nil, pingErr
+		return nil, nil, 0.0, 0.0, pingErr
 	}
 
 	// Collect ping statistics
 	select {
 	case downloadStats = <-downloadStatsChan:
 	case <-time.After(2 * time.Second):
-		return nil, nil, fmt.Errorf("timeout waiting for download ping statistics")
+		return nil, nil, 0.0, 0.0, fmt.Errorf("timeout waiting for download ping statistics")
 	}
 
 	select {
 	case uploadStats = <-uploadStatsChan:
 	case <-time.After(2 * time.Second):
-		return nil, nil, fmt.Errorf("timeout waiting for upload ping statistics")
+		return nil, nil, 0.0, 0.0, fmt.Errorf("timeout waiting for upload ping statistics")
 	}
 
 	if downloadStats == nil {
-		return nil, nil, fmt.Errorf("no download ping statistics received")
+		return nil, nil, 0.0, 0.0, fmt.Errorf("no download ping statistics received")
 	}
 	if uploadStats == nil {
-		return nil, nil, fmt.Errorf("no upload ping statistics received")
+		return nil, nil, 0.0, 0.0, fmt.Errorf("no upload ping statistics received")
 	}
 
 	log.Debug().
@@ -398,7 +406,7 @@ func (s *BufferbloatTestService) runSpeedtestWithPingSeparate(ctx context.Contex
 		Float64("uploadRTT", uploadStats.AvgRtt.Seconds()*1000).
 		Msg("Completed speedtest with continuous ping measurement")
 
-	return downloadStats, uploadStats, nil
+	return downloadStats, uploadStats, downloadSpeed, uploadSpeed, nil
 }
 
 // runContinuousPing runs continuous ping for a specific phase
@@ -423,9 +431,9 @@ func (s *BufferbloatTestService) runContinuousPingWithPrivilege(ctx context.Cont
 	}
 
 	// Configure pinger for continuous operation
-	pinger.Count = -1 // Continuous ping
+	pinger.Count = -1                        // Continuous ping
 	pinger.Interval = 100 * time.Millisecond // Faster ping rate for better RTT tracking
-	pinger.Timeout = 30 * time.Second // Long timeout for continuous operation
+	pinger.Timeout = 30 * time.Second        // Long timeout for continuous operation
 	pinger.SetPrivileged(usePrivileged)
 
 	var rttSum time.Duration
@@ -441,21 +449,21 @@ func (s *BufferbloatTestService) runContinuousPingWithPrivilege(ctx context.Cont
 	pinger.OnRecv = func(pkt *probing.Packet) {
 		rttMutex.Lock()
 		defer rttMutex.Unlock()
-		
+
 		rttSum += pkt.Rtt
 		rttCount++
-		
+
 		// Calculate squared sum in milliseconds for proper variance calculation
 		rttMs := float64(pkt.Rtt) / float64(time.Millisecond)
 		rttSquaredSum += rttMs * rttMs
-		
+
 		if pkt.Rtt < rttMin {
 			rttMin = pkt.Rtt
 		}
 		if pkt.Rtt > rttMax {
 			rttMax = pkt.Rtt
 		}
-		
+
 		// Broadcast real-time RTT updates
 		currentAvgRTT := float64(rttSum) / float64(rttCount) / float64(time.Millisecond)
 		s.broadcastUpdate(types.BufferbloatUpdate{
@@ -486,7 +494,7 @@ func (s *BufferbloatTestService) runContinuousPingWithPrivilege(ctx context.Cont
 	}
 
 	avgRtt := time.Duration(int64(rttSum) / int64(rttCount))
-	
+
 	// Calculate standard deviation (jitter) properly
 	avgRttMs := float64(avgRtt) / float64(time.Millisecond) // Convert to milliseconds as float64
 	varianceMs := (rttSquaredSum / float64(rttCount)) - (avgRttMs * avgRttMs)
