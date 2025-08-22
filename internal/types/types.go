@@ -133,6 +133,18 @@ type PacketLossUpdate struct {
 	Error       string  `json:"error,omitempty"`
 }
 
+type BufferbloatUpdate struct {
+	Type        string  `json:"type"`
+	Phase       string  `json:"phase"` // "baseline", "speedtest", "completed"
+	IsRunning   bool    `json:"isRunning"`
+	IsComplete  bool    `json:"isComplete"`
+	Progress    float64 `json:"progress"`
+	BaselineRTT float64 `json:"baselineRtt,omitempty"`
+	CurrentRTT  float64 `json:"currentRtt,omitempty"`
+	Bufferbloat float64 `json:"bufferbloat,omitempty"`
+	Error       string  `json:"error,omitempty"`
+}
+
 type PacketLossMonitor struct {
 	ID              int64      `db:"id" json:"id"`
 	Host            string     `db:"host" json:"host"`

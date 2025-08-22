@@ -29,23 +29,25 @@ import (
 var _ broadcaster.Broadcaster = &Server{}
 
 type Server struct {
-	Router               *gin.Engine
-	speedtest            speedtest.Service
-	packetLossService    *speedtest.PacketLossService
-	monitorService       *monitor.Service
-	db                   database.Service
-	scheduler            scheduler.Service
-	auth                 *AuthHandler
-	notifier             *notifications.Notifier
-	mu                   sync.RWMutex
-	lastUpdate           *types.SpeedUpdate
-	lastTracerouteUpdate *types.TracerouteUpdate
-	lastPacketLossUpdate *types.PacketLossUpdate
-	lastMonitorUpdate    *types.MonitorUpdate
-	config               *config.Config
+	Router                *gin.Engine
+	speedtest             speedtest.Service
+	packetLossService     *speedtest.PacketLossService
+	bufferbloatService    *speedtest.BufferbloatTestService
+	monitorService        *monitor.Service
+	db                    database.Service
+	scheduler             scheduler.Service
+	auth                  *AuthHandler
+	notifier              *notifications.Notifier
+	mu                    sync.RWMutex
+	lastUpdate            *types.SpeedUpdate
+	lastTracerouteUpdate  *types.TracerouteUpdate
+	lastPacketLossUpdate  *types.PacketLossUpdate
+	lastBufferbloatUpdate *types.BufferbloatUpdate
+	lastMonitorUpdate     *types.MonitorUpdate
+	config                *config.Config
 }
 
-func NewServer(speedtest speedtest.Service, db database.Service, scheduler scheduler.Service, cfg *config.Config, packetLossService *speedtest.PacketLossService, monitorService *monitor.Service, notifier *notifications.Notifier) *Server {
+func NewServer(speedtestService speedtest.Service, db database.Service, scheduler scheduler.Service, cfg *config.Config, packetLossService *speedtest.PacketLossService, monitorService *monitor.Service, notifier *notifications.Notifier) *Server {
 	// Set Gin mode from config
 	if cfg.Server.GinMode != "" {
 		gin.SetMode(cfg.Server.GinMode)
@@ -82,16 +84,17 @@ func NewServer(speedtest speedtest.Service, db database.Service, scheduler sched
 	})
 
 	s := &Server{
-		Router:            router,
-		speedtest:         speedtest,
-		packetLossService: packetLossService,
-		monitorService:    monitorService,
-		db:                db,
-		scheduler:         scheduler,
-		auth:              NewAuthHandler(db, oidcConfig, cfg.Session.Secret, cfg.Auth.Whitelist),
-		notifier:          notifier,
-		lastUpdate:        &types.SpeedUpdate{},
-		config:            cfg,
+		Router:             router,
+		speedtest:          speedtestService,
+		packetLossService:  packetLossService,
+		bufferbloatService: speedtest.NewBufferbloatTestService(speedtestService),
+		monitorService:     monitorService,
+		db:                 db,
+		scheduler:          scheduler,
+		auth:               NewAuthHandler(db, oidcConfig, cfg.Session.Secret, cfg.Auth.Whitelist),
+		notifier:           notifier,
+		lastUpdate:         &types.SpeedUpdate{},
+		config:             cfg,
 	}
 
 	// Don't register routes here - let the caller do it after setting up packet loss service
@@ -140,6 +143,23 @@ func (s *Server) BroadcastPacketLossUpdate(update types.PacketLossUpdate) {
 		Msg("Broadcasting packet loss update")
 }
 
+func (s *Server) BroadcastBufferbloatUpdate(update types.BufferbloatUpdate) {
+	s.mu.Lock()
+	s.lastBufferbloatUpdate = &update
+	s.mu.Unlock()
+
+	log.Trace().
+		Str("type", update.Type).
+		Str("phase", update.Phase).
+		Bool("isRunning", update.IsRunning).
+		Bool("isComplete", update.IsComplete).
+		Float64("progress", update.Progress).
+		Float64("baselineRtt", update.BaselineRTT).
+		Float64("currentRtt", update.CurrentRTT).
+		Float64("bufferbloat", update.Bufferbloat).
+		Msg("Broadcasting bufferbloat update")
+}
+
 func (s *Server) BroadcastMonitorUpdate(update types.MonitorUpdate) {
 	s.mu.Lock()
 	s.lastMonitorUpdate = &update
@@ -158,6 +178,12 @@ func (s *Server) SetPacketLossService(service *speedtest.PacketLossService) {
 	s.mu.Lock()
 	s.packetLossService = service
 	s.mu.Unlock()
+}
+
+func (s *Server) GetBufferbloatService() *speedtest.BufferbloatTestService {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.bufferbloatService
 }
 
 func (s *Server) SetMonitorService(service *monitor.Service) {
@@ -256,6 +282,13 @@ func (s *Server) RegisterRoutes() {
 				protected.GET("/packetloss/monitors/:id/history", packetLossHandler.GetMonitorHistory)
 				protected.POST("/packetloss/monitors/:id/start", packetLossHandler.StartMonitor)
 				protected.POST("/packetloss/monitors/:id/stop", packetLossHandler.StopMonitor)
+			}
+
+			// Bufferbloat testing routes
+			if s.bufferbloatService != nil {
+				bufferbloatHandler := handlers.NewBufferbloatHandler(s.db, s.bufferbloatService)
+				protected.POST("/bufferbloat/test", bufferbloatHandler.RunBufferbloatTest)
+				protected.GET("/bufferbloat/status", s.handleBufferbloatTestStatus)
 			}
 
 			// Vnstat monitoring routes

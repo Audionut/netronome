@@ -152,6 +152,17 @@ func (s *Server) handleSpeedTestStatus(c *gin.Context) {
 	c.JSON(http.StatusOK, s.lastUpdate)
 }
 
+func (s *Server) handleBufferbloatTestStatus(c *gin.Context) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	log.Trace().
+		Interface("lastBufferbloatUpdate", s.lastBufferbloatUpdate).
+		Msg("Sending bufferbloat status update")
+
+	c.JSON(http.StatusOK, s.lastBufferbloatUpdate)
+}
+
 func (s *Server) handleGetSchedules(c *gin.Context) {
 	schedules, err := s.db.GetSchedules(c.Request.Context())
 	if err != nil {
