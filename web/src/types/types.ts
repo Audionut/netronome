@@ -117,6 +117,8 @@ export interface BufferbloatResult {
   uploadBufferbloatPct: number;
   downloadSeverity: string;
   uploadSeverity: string;
+  downloadSpeed: number;
+  uploadSpeed: number;
   pingTarget: string;
   timestamp: string;
 }

@@ -165,13 +165,13 @@ export const BufferbloatTest: React.FC<BufferbloatTestProps> = ({
 
   const renderPhaseDescription = (phase: string) => {
     switch (phase) {
-      case "ping_baseline":
+      case "baseline":
         return "Establishing baseline RTT (10 seconds of continuous ping)";
       case "download":
         return "Running download test while monitoring RTT changes";
       case "upload":
         return "Running upload test while monitoring RTT changes";
-      case "complete":
+      case "completed":
         return "Bufferbloat test complete";
       default:
         return "Initializing test...";
@@ -256,22 +256,34 @@ export const BufferbloatTest: React.FC<BufferbloatTestProps> = ({
               animate={{ opacity: 1, y: 0 }}
               className="space-y-4"
             >
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
+              {/* Progress bar only during baseline */}
+              {progress.phase === "baseline" && (
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                      {renderPhaseDescription(progress.phase)}
+                    </span>
+                    <span className="text-sm text-gray-500 dark:text-gray-400">
+                      {Math.round(progress.progress)}%
+                    </span>
+                  </div>
+                  <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2">
+                    <div 
+                      className="bg-blue-600 h-2 rounded-full transition-all duration-300" 
+                      style={{ width: `${Math.min(100, Math.max(0, progress.progress))}%` }}
+                    />
+                  </div>
+                </div>
+              )}
+
+              {/* Phase description for speedtest phases without progress bar */}
+              {(progress.phase === "download" || progress.phase === "upload") && (
+                <div className="text-center">
+                  <span className="text-lg font-medium text-gray-700 dark:text-gray-300">
                     {renderPhaseDescription(progress.phase)}
                   </span>
-                  <span className="text-sm text-gray-500 dark:text-gray-400">
-                    {Math.round(progress.progress)}%
-                  </span>
                 </div>
-                <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2">
-                  <div 
-                    className="bg-blue-600 h-2 rounded-full transition-all duration-300" 
-                    style={{ width: `${Math.min(100, Math.max(0, progress.progress))}%` }}
-                  />
-                </div>
-              </div>
+              )}
 
               {/* Real-time metrics */}
               <div className="grid grid-cols-3 gap-4">
@@ -450,6 +462,36 @@ export const BufferbloatTest: React.FC<BufferbloatTestProps> = ({
                       </div>
                       <div className="text-xs text-gray-600 dark:text-gray-400">
                         Upload Jitter
+                      </div>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Speed Results */}
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <Gauge className="h-5 w-5 text-purple-500" />
+                    Speed Test Results
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="text-center">
+                      <div className="text-2xl font-mono font-bold text-gray-900 dark:text-gray-100">
+                        {result.downloadSpeed.toFixed(1)} Mbps
+                      </div>
+                      <div className="text-sm text-gray-600 dark:text-gray-400">
+                        Download Speed
+                      </div>
+                    </div>
+                    <div className="text-center">
+                      <div className="text-2xl font-mono font-bold text-gray-900 dark:text-gray-100">
+                        {result.uploadSpeed.toFixed(1)} Mbps
+                      </div>
+                      <div className="text-sm text-gray-600 dark:text-gray-400">
+                        Upload Speed
                       </div>
                     </div>
                   </div>
