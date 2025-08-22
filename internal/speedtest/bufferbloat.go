@@ -254,68 +254,263 @@ func (s *BufferbloatTestService) runPingWithPrivilege(ctx context.Context, targe
 	}
 }
 
-// runSpeedtestWithPingSeparate runs a normal speedtest and uses its built-in latency measurements
+// runSpeedtestWithPingSeparate runs speedtest with continuous ICMP ping during both download and upload phases
 func (s *BufferbloatTestService) runSpeedtestWithPingSeparate(ctx context.Context, pingTarget string, speedtestOpts *types.TestOptions) (*probing.Statistics, *probing.Statistics, error) {
-	// Just run the normal speedtest - it has its own latency measurements
-	log.Debug().Msg("Running normal speedtest for bufferbloat test")
+	var downloadStats, uploadStats *probing.Statistics
+	var wg sync.WaitGroup
+	var testErr error
+	var pingErr error
 
-	result, err := s.speedtestService.RunTest(ctx, speedtestOpts)
-	if err != nil {
-		return nil, nil, fmt.Errorf("speedtest failed: %w", err)
-	}
+	// Create contexts for each phase
+	downloadCtx, downloadCancel := context.WithCancel(ctx)
+	uploadCtx, uploadCancel := context.WithCancel(ctx)
+	defer downloadCancel()
+	defer uploadCancel()
 
-	// Convert the speedtest's latency result to ping statistics format
-	// Parse the latency from the result (it's usually in format like "12.34ms" or similar)
-	var avgRttMs float64
-	var jitterMs float64
+	// Channels to collect ping statistics
+	downloadStatsChan := make(chan *probing.Statistics, 1)
+	uploadStatsChan := make(chan *probing.Statistics, 1)
 
-	// Try to extract numeric latency value
-	if result.Latency != "" {
-		// Use fmt.Sscanf to parse the latency value
-		if parsed, parseErr := fmt.Sscanf(result.Latency, "%fms", &avgRttMs); parseErr == nil && parsed == 1 {
-			log.Debug().Float64("latency", avgRttMs).Msg("Extracted latency from speedtest result")
-		} else if parsed, parseErr := fmt.Sscanf(result.Latency, "%f", &avgRttMs); parseErr == nil && parsed == 1 {
-			log.Debug().Float64("latency", avgRttMs).Msg("Extracted latency from speedtest result (no unit)")
-		} else {
-			// Fallback to a reasonable default if parsing fails
-			avgRttMs = 50.0
-			log.Warn().Str("latency", result.Latency).Msg("Could not parse speedtest latency, using default")
+	// Start the speedtest in a separate goroutine
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		log.Debug().Msg("Starting speedtest for bufferbloat measurement")
+		
+		// Create separate test options for download and upload phases
+		downloadOpts := *speedtestOpts
+		downloadOpts.EnableUpload = false
+		downloadOpts.EnableDownload = true
+
+		uploadOpts := *speedtestOpts
+		uploadOpts.EnableUpload = true
+		uploadOpts.EnableDownload = false
+
+		// Run download phase
+		s.broadcastUpdate(types.BufferbloatUpdate{
+			Type:      "bufferbloat",
+			Phase:     "download",
+			IsRunning: true,
+			Progress:  60,
+		})
+
+		_, err := s.speedtestService.RunTest(downloadCtx, &downloadOpts)
+		if err != nil && err != context.Canceled {
+			testErr = fmt.Errorf("download speedtest failed: %w", err)
+			downloadCancel()
+			return
 		}
-	} else {
-		avgRttMs = 50.0
-		log.Warn().Msg("No latency in speedtest result, using default")
+
+		// Signal download phase complete, cancel download ping
+		downloadCancel()
+		
+		// Brief pause between phases
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(2 * time.Second):
+		}
+
+		// Run upload phase
+		s.broadcastUpdate(types.BufferbloatUpdate{
+			Type:      "bufferbloat",
+			Phase:     "upload",
+			IsRunning: true,
+			Progress:  80,
+		})
+
+		_, err = s.speedtestService.RunTest(uploadCtx, &uploadOpts)
+		if err != nil && err != context.Canceled {
+			testErr = fmt.Errorf("upload speedtest failed: %w", err)
+		}
+		
+		// Signal upload phase complete
+		uploadCancel()
+	}()
+
+	// Start download phase ping in a separate goroutine
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		log.Debug().Msg("Starting continuous ping during download phase")
+		stats, err := s.runContinuousPing(downloadCtx, pingTarget, "download")
+		if err != nil && err != context.Canceled {
+			pingErr = fmt.Errorf("download ping failed: %w", err)
+			return
+		}
+		if stats != nil {
+			downloadStatsChan <- stats
+		}
+	}()
+
+	// Start upload phase ping in a separate goroutine  
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		// Wait for download phase to complete
+		<-downloadCtx.Done()
+		
+		log.Debug().Msg("Starting continuous ping during upload phase")
+		stats, err := s.runContinuousPing(uploadCtx, pingTarget, "upload")
+		if err != nil && err != context.Canceled {
+			pingErr = fmt.Errorf("upload ping failed: %w", err)
+			return
+		}
+		if stats != nil {
+			uploadStatsChan <- stats
+		}
+	}()
+
+	// Wait for all goroutines to complete
+	wg.Wait()
+
+	// Check for errors
+	if testErr != nil {
+		return nil, nil, testErr
+	}
+	if pingErr != nil {
+		return nil, nil, pingErr
 	}
 
-	// Use jitter from speedtest if available
-	jitterMs = result.Jitter
-	if jitterMs <= 0 {
-		jitterMs = avgRttMs * 0.1 // Estimate jitter as 10% of RTT if not available
+	// Collect ping statistics
+	select {
+	case downloadStats = <-downloadStatsChan:
+	case <-time.After(2 * time.Second):
+		return nil, nil, fmt.Errorf("timeout waiting for download ping statistics")
 	}
 
-	// Create ping statistics objects from the speedtest latency data
-	avgRtt := time.Duration(avgRttMs * float64(time.Millisecond))
-	jitter := time.Duration(jitterMs * float64(time.Millisecond))
+	select {
+	case uploadStats = <-uploadStatsChan:
+	case <-time.After(2 * time.Second):
+		return nil, nil, fmt.Errorf("timeout waiting for upload ping statistics")
+	}
 
-	// Create statistics for both download and upload phases
-	// For now, use the same values since speedtest.net gives us overall latency
-	stats := &probing.Statistics{
-		PacketsRecv: 10, // Simulate reasonable packet count
-		PacketsSent: 10,
-		PacketLoss:  0.0,
-		AvgRtt:      avgRtt,
-		MinRtt:      avgRtt - jitter/2,
-		MaxRtt:      avgRtt + jitter/2,
-		StdDevRtt:   jitter,
+	if downloadStats == nil {
+		return nil, nil, fmt.Errorf("no download ping statistics received")
+	}
+	if uploadStats == nil {
+		return nil, nil, fmt.Errorf("no upload ping statistics received")
 	}
 
 	log.Debug().
-		Float64("avgRTT", avgRttMs).
-		Float64("jitter", jitterMs).
-		Msg("Created ping statistics from speedtest latency data")
+		Float64("downloadRTT", downloadStats.AvgRtt.Seconds()*1000).
+		Float64("uploadRTT", uploadStats.AvgRtt.Seconds()*1000).
+		Msg("Completed speedtest with continuous ping measurement")
 
-	// Return the same stats for both download and upload
-	// In the future, this could be enhanced if we can get separate phase data
-	return stats, stats, nil
+	return downloadStats, uploadStats, nil
+}
+
+// runContinuousPing runs continuous ping for a specific phase
+func (s *BufferbloatTestService) runContinuousPing(ctx context.Context, target, phase string) (*probing.Statistics, error) {
+	// Try privileged mode first, then fall back to unprivileged
+	stats, err := s.runContinuousPingWithPrivilege(ctx, target, phase, true)
+	if err != nil {
+		log.Warn().Err(err).Str("target", target).Str("phase", phase).Msg("Privileged continuous ping failed, trying unprivileged mode")
+		stats, err = s.runContinuousPingWithPrivilege(ctx, target, phase, false)
+		if err != nil {
+			return nil, fmt.Errorf("both privileged and unprivileged continuous ping failed: %w", err)
+		}
+	}
+	return stats, nil
+}
+
+// runContinuousPingWithPrivilege runs continuous ping with specified privilege mode for a phase
+func (s *BufferbloatTestService) runContinuousPingWithPrivilege(ctx context.Context, target, phase string, usePrivileged bool) (*probing.Statistics, error) {
+	pinger, err := probing.NewPinger(target)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create pinger: %w", err)
+	}
+
+	// Configure pinger for continuous operation
+	pinger.Count = -1 // Continuous ping
+	pinger.Interval = 100 * time.Millisecond // Faster ping rate for better RTT tracking
+	pinger.Timeout = 30 * time.Second // Long timeout for continuous operation
+	pinger.SetPrivileged(usePrivileged)
+
+	var rttSum time.Duration
+	var rttCount int
+	var rttMin, rttMax time.Duration
+	var rttSquaredSum float64
+	var rttMutex sync.Mutex
+
+	// Initialize min/max tracking
+	rttMin = time.Hour // Very large initial value
+	rttMax = 0
+
+	pinger.OnRecv = func(pkt *probing.Packet) {
+		rttMutex.Lock()
+		defer rttMutex.Unlock()
+		
+		rttSum += pkt.Rtt
+		rttCount++
+		rttSquaredSum += float64(pkt.Rtt) * float64(pkt.Rtt)
+		
+		if pkt.Rtt < rttMin {
+			rttMin = pkt.Rtt
+		}
+		if pkt.Rtt > rttMax {
+			rttMax = pkt.Rtt
+		}
+		
+		// Broadcast real-time RTT updates
+		currentAvgRTT := float64(rttSum) / float64(rttCount) / float64(time.Millisecond)
+		s.broadcastUpdate(types.BufferbloatUpdate{
+			Type:       "bufferbloat",
+			Phase:      phase,
+			IsRunning:  true,
+			CurrentRTT: currentAvgRTT,
+		})
+	}
+
+	// Start pinger in goroutine
+	go func() {
+		if err := pinger.Run(); err != nil && err != context.Canceled {
+			log.Warn().Err(err).Str("phase", phase).Msg("Ping error during continuous ping")
+		}
+	}()
+
+	// Wait for context cancellation (when speedtest phase completes)
+	<-ctx.Done()
+	pinger.Stop()
+
+	// Calculate final statistics
+	rttMutex.Lock()
+	defer rttMutex.Unlock()
+
+	if rttCount == 0 {
+		return nil, fmt.Errorf("no ping responses received during %s phase", phase)
+	}
+
+	avgRtt := time.Duration(int64(rttSum) / int64(rttCount))
+	
+	// Calculate standard deviation (jitter)
+	avgRttFloat := float64(avgRtt)
+	variance := (rttSquaredSum / float64(rttCount)) - (avgRttFloat * avgRttFloat)
+	if variance < 0 {
+		variance = 0
+	}
+	stdDev := time.Duration(int64(variance))
+
+	stats := &probing.Statistics{
+		PacketsRecv: rttCount,
+		PacketsSent: rttCount, // Assume no packet loss for simplicity
+		PacketLoss:  0.0,
+		AvgRtt:      avgRtt,
+		MinRtt:      rttMin,
+		MaxRtt:      rttMax,
+		StdDevRtt:   stdDev,
+	}
+
+	log.Debug().
+		Str("phase", phase).
+		Float64("avgRTT", avgRtt.Seconds()*1000).
+		Float64("minRTT", rttMin.Seconds()*1000).
+		Float64("maxRTT", rttMax.Seconds()*1000).
+		Float64("jitter", stdDev.Seconds()*1000).
+		Int("packetCount", rttCount).
+		Msg("Continuous ping phase completed")
+
+	return stats, nil
 }
 
 // calculateBufferbloatSeverity determines the severity of bufferbloat
