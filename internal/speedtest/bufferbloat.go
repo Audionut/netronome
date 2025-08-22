@@ -6,6 +6,7 @@ package speedtest
 import (
 	"context"
 	"fmt"
+	"math"
 	"sync"
 	"time"
 
@@ -91,9 +92,9 @@ func (s *BufferbloatTestService) RunBufferbloatTest(ctx context.Context, pingTar
 	// Phase 2: Run speedtest with continuous ping
 	s.broadcastUpdate(types.BufferbloatUpdate{
 		Type:        "bufferbloat",
-		Phase:       "speedtest",
+		Phase:       "download",
 		IsRunning:   true,
-		Progress:    50,
+		Progress:    60,
 		BaselineRTT: baselineStats.AvgRtt.Seconds() * 1000,
 	})
 
@@ -101,7 +102,7 @@ func (s *BufferbloatTestService) RunBufferbloatTest(ctx context.Context, pingTar
 	if err != nil {
 		s.broadcastUpdate(types.BufferbloatUpdate{
 			Type:        "bufferbloat",
-			Phase:       "speedtest",
+			Phase:       "download",
 			IsRunning:   false,
 			IsComplete:  true,
 			BaselineRTT: baselineStats.AvgRtt.Seconds() * 1000,
@@ -443,7 +444,10 @@ func (s *BufferbloatTestService) runContinuousPingWithPrivilege(ctx context.Cont
 		
 		rttSum += pkt.Rtt
 		rttCount++
-		rttSquaredSum += float64(pkt.Rtt) * float64(pkt.Rtt)
+		
+		// Calculate squared sum in milliseconds for proper variance calculation
+		rttMs := float64(pkt.Rtt) / float64(time.Millisecond)
+		rttSquaredSum += rttMs * rttMs
 		
 		if pkt.Rtt < rttMin {
 			rttMin = pkt.Rtt
@@ -483,13 +487,14 @@ func (s *BufferbloatTestService) runContinuousPingWithPrivilege(ctx context.Cont
 
 	avgRtt := time.Duration(int64(rttSum) / int64(rttCount))
 	
-	// Calculate standard deviation (jitter)
-	avgRttFloat := float64(avgRtt)
-	variance := (rttSquaredSum / float64(rttCount)) - (avgRttFloat * avgRttFloat)
-	if variance < 0 {
-		variance = 0
+	// Calculate standard deviation (jitter) properly
+	avgRttMs := float64(avgRtt) / float64(time.Millisecond) // Convert to milliseconds as float64
+	varianceMs := (rttSquaredSum / float64(rttCount)) - (avgRttMs * avgRttMs)
+	if varianceMs < 0 {
+		varianceMs = 0
 	}
-	stdDev := time.Duration(int64(variance))
+	stdDevMs := math.Sqrt(varianceMs)
+	stdDev := time.Duration(stdDevMs * float64(time.Millisecond)) // Convert back to time.Duration
 
 	stats := &probing.Statistics{
 		PacketsRecv: rttCount,
