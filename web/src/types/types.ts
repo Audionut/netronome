@@ -92,6 +92,35 @@ export interface SpeedUpdate {
   testType?: string; // "speedtest", "iperf3", "librespeed"
 }
 
+export interface BufferbloatUpdate {
+  type: string;
+  phase: string; // "baseline", "speedtest", "completed"
+  isRunning: boolean;
+  isComplete: boolean;
+  progress: number;
+  baselineRtt?: number;
+  currentRtt?: number;
+  bufferbloat?: number;
+  error?: string;
+}
+
+export interface BufferbloatResult {
+  baselineRtt: number;
+  baselineJitter: number;
+  downloadRtt: number;
+  downloadJitter: number;
+  uploadRtt: number;
+  uploadJitter: number;
+  downloadBufferbloat: number;
+  uploadBufferbloat: number;
+  downloadBufferbloatPct: number;
+  uploadBufferbloatPct: number;
+  downloadSeverity: string;
+  uploadSeverity: string;
+  pingTarget: string;
+  timestamp: string;
+}
+
 export interface PaginatedResponse<T> {
   data: T[];
   page: number;

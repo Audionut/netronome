@@ -38,6 +38,7 @@ import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/input";
 import { formatServerName, subscribeToShowCitySetting } from "@/utils/serverDisplay";
+import { BufferbloatTest } from "./BufferbloatTest";
 
 interface ServerListProps {
   servers: Server[];
@@ -82,6 +83,7 @@ export const ServerList: React.FC<ServerListProps> = ({
   >([]);
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
   const [saveModalOpen, setSaveModalOpen] = useState(false);
+  const [bufferbloatTestOpen, setBufferbloatTestOpen] = useState(false);
   const [serverToDelete, setServerToDelete] = useState<number | null>(null);
   const [newServerDetails, setNewServerDetails] = useState<{
     host: string;
@@ -355,14 +357,26 @@ export const ServerList: React.FC<ServerListProps> = ({
                       </RadioGroup>
                     </div>
 
-                    {/* Run Test Button */}
-                    <Button
-                      onClick={onRunTest}
-                      disabled={isLoading || selectedServers.length === 0}
-                      className="w-full sm:w-auto"
-                    >
-                      Run
-                    </Button>
+                    {/* Test Buttons */}
+                    <div className="flex gap-2">
+                      <Button
+                        onClick={onRunTest}
+                        disabled={isLoading || selectedServers.length === 0}
+                        className="flex-1 sm:flex-none sm:w-auto"
+                      >
+                        Run
+                      </Button>
+                      
+                      <Button
+                        variant="outline"
+                        onClick={() => setBufferbloatTestOpen(true)}
+                        disabled={isLoading || selectedServers.length === 0}
+                        className="flex-1 sm:flex-none sm:w-auto"
+                        title="Test for bufferbloat (network latency spikes during traffic bursts)"
+                      >
+                        Bufferbloat Test
+                      </Button>
+                    </div>
                   </div>
 
                   {testType === "iperf" && (
@@ -677,6 +691,13 @@ export const ServerList: React.FC<ServerListProps> = ({
               onConfirm={(name, host, port) => {
                 saveIperfServer(name, host, parseInt(port));
               }}
+            />
+
+            {/* Bufferbloat Test Dialog */}
+            <BufferbloatTest
+              isOpen={bufferbloatTestOpen}
+              onClose={() => setBufferbloatTestOpen(false)}
+              selectedServer={selectedServers.length > 0 ? selectedServers[0] : null}
             />
       </div>
     </Collapsible>
