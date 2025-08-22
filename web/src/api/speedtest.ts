@@ -169,6 +169,25 @@ export async function getSpeedTestStatus() {
   }
 }
 
+export async function getBufferbloatTestStatus() {
+  try {
+    const response = await fetch(getApiUrl("/bufferbloat/status"), {
+      headers: {
+        "Cache-Control": "no-cache",
+        Pragma: "no-cache",
+      },
+    });
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.message || "Failed to get bufferbloat test status");
+    }
+    return await response.json();
+  } catch (error) {
+    console.error("Error getting bufferbloat test status:", error);
+    throw error;
+  }
+}
+
 export async function runTraceroute(host: string) {
   try {
     const response = await fetch(

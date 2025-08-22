@@ -66,6 +66,10 @@ type Service interface {
 	SaveSpeedTest(ctx context.Context, result types.SpeedTestResult) (*types.SpeedTestResult, error)
 	GetSpeedTests(ctx context.Context, timeRange string, page int, limit int) (*types.PaginatedSpeedTests, error)
 
+	// Bufferbloat operations
+	SaveBufferbloatTest(ctx context.Context, result types.BufferbloatResult) (*types.BufferbloatResult, error)
+	GetBufferbloatTests(ctx context.Context, timeRange string, page int, limit int) (*types.PaginatedBufferbloatTests, error)
+
 	// Schedule operations
 	CreateSchedule(ctx context.Context, schedule types.Schedule) (*types.Schedule, error)
 	GetSchedules(ctx context.Context) ([]types.Schedule, error)

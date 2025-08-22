@@ -253,6 +253,11 @@ func runServer(cmd *cobra.Command, args []string) error {
 	speedtestSvc.SetBroadcastUpdate(serverHandler.BroadcastUpdate)
 	speedtestSvc.SetBroadcastTracerouteUpdate(serverHandler.BroadcastTracerouteUpdate)
 
+	// Set up bufferbloat service broadcast
+	if bufferbloatService := serverHandler.GetBufferbloatService(); bufferbloatService != nil {
+		bufferbloatService.SetBroadcast(serverHandler.BroadcastBufferbloatUpdate)
+	}
+
 	// Set the broadcaster for packet loss service
 	if packetLossService != nil {
 		packetLossService.SetBroadcast(serverHandler.BroadcastPacketLossUpdate)
