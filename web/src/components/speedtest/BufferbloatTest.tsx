@@ -30,7 +30,7 @@ export const BufferbloatTest: React.FC<BufferbloatTestProps> = ({
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<BufferbloatResult | null>(null);
   const [progress, setProgress] = useState({
-    phase: "ping_baseline" as "ping_baseline" | "speed_test" | "analysis" | "complete",
+    phase: "ping_baseline" as "ping_baseline" | "download" | "upload" | "complete",
     progress: 0,
     baselineRtt: 0,
     currentRtt: 0,
@@ -51,8 +51,9 @@ export const BufferbloatTest: React.FC<BufferbloatTestProps> = ({
             setProgress(prev => ({
               ...prev,
               phase: update.phase === "baseline" ? "ping_baseline" :
-                     update.phase === "speedtest" ? "speed_test" :
-                     update.phase === "completed" ? "complete" : "analysis",
+                     update.phase === "download" ? "download" :
+                     update.phase === "upload" ? "upload" :
+                     update.phase === "completed" ? "complete" : prev.phase,
               progress: update.progress,
               baselineRtt: update.baselineRtt || prev.baselineRtt,
               currentRtt: update.currentRtt || prev.currentRtt,
@@ -166,10 +167,10 @@ export const BufferbloatTest: React.FC<BufferbloatTestProps> = ({
     switch (phase) {
       case "ping_baseline":
         return "Establishing baseline RTT (10 seconds of continuous ping)";
-      case "speed_test":
-        return "Running speed test while monitoring RTT changes";
-      case "analysis":
-        return "Analyzing bufferbloat impact and calculating results";
+      case "download":
+        return "Running download test while monitoring RTT changes";
+      case "upload":
+        return "Running upload test while monitoring RTT changes";
       case "complete":
         return "Bufferbloat test complete";
       default:
@@ -273,8 +274,8 @@ export const BufferbloatTest: React.FC<BufferbloatTestProps> = ({
               </div>
 
               {/* Real-time metrics */}
-              <div className="grid grid-cols-2 gap-4">
-                {progress.baselineRtt && (
+              <div className="grid grid-cols-3 gap-4">
+                {progress.baselineRtt > 0 && (
                   <div className="text-center p-3 bg-gray-50 dark:bg-gray-800 rounded-lg">
                     <div className="text-lg font-mono font-bold text-gray-900 dark:text-gray-100">
                       {progress.baselineRtt.toFixed(1)}ms
@@ -285,13 +286,28 @@ export const BufferbloatTest: React.FC<BufferbloatTestProps> = ({
                   </div>
                 )}
                 
-                {progress.currentRtt && (
+                {progress.currentRtt > 0 && (
                   <div className="text-center p-3 bg-gray-50 dark:bg-gray-800 rounded-lg">
                     <div className="text-lg font-mono font-bold text-gray-900 dark:text-gray-100">
                       {progress.currentRtt.toFixed(1)}ms
                     </div>
                     <div className="text-xs text-gray-600 dark:text-gray-400">
-                      Current RTT
+                      {progress.phase === "download" ? "Download RTT" :
+                       progress.phase === "upload" ? "Upload RTT" : "Current RTT"}
+                    </div>
+                  </div>
+                )}
+
+                {progress.baselineRtt > 0 && progress.currentRtt > 0 && (
+                  <div className="text-center p-3 bg-gray-50 dark:bg-gray-800 rounded-lg">
+                    <div className={`text-lg font-mono font-bold ${
+                      progress.currentRtt > progress.baselineRtt ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400'
+                    }`}>
+                      {progress.currentRtt > progress.baselineRtt ? '+' : ''}
+                      {(progress.currentRtt - progress.baselineRtt).toFixed(1)}ms
+                    </div>
+                    <div className="text-xs text-gray-600 dark:text-gray-400">
+                      RTT Increase
                     </div>
                   </div>
                 )}
