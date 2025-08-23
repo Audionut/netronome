@@ -207,8 +207,8 @@ func (s *BufferbloatTestService) runPingWithPrivilege(ctx context.Context, targe
 	var rttMutex sync.Mutex
 
 	pinger.OnSend = func(pkt *probing.Packet) {
-		if count == 10 { // Only send progress updates for baseline ping (10 seconds)
-			progress := float64(pkt.Seq) / 10.0 * 50.0 // First 50% of progress
+		if count == 10 { // Send progress updates for baseline ping (10 seconds)
+			progress := float64(pkt.Seq) / float64(count) * 100.0 // 0-100% progress
 			rttMutex.Lock()
 			currentAvgRTT := float64(rttSum) / float64(rttCount) / float64(time.Millisecond)
 			rttMutex.Unlock()
@@ -286,10 +286,12 @@ func (s *BufferbloatTestService) runSpeedtestWithPingSeparate(ctx context.Contex
 		downloadOpts := *speedtestOpts
 		downloadOpts.EnableUpload = false
 		downloadOpts.EnableDownload = true
+		downloadOpts.IsBufferbloat = true // Mark as bufferbloat test to prevent saving to speedtest history
 
 		uploadOpts := *speedtestOpts
 		uploadOpts.EnableUpload = true
 		uploadOpts.EnableDownload = false
+		uploadOpts.IsBufferbloat = true // Mark as bufferbloat test to prevent saving to speedtest history
 
 		// Run download phase
 		s.broadcastUpdate(types.BufferbloatUpdate{
