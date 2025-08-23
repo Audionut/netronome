@@ -179,9 +179,9 @@ export const BufferbloatTest: React.FC<BufferbloatTestProps> = ({
   };
 
   const getBufferbloatSeverity = (bufferbloat: number) => {
-    if (bufferbloat < 100) return { level: "Good", color: "text-green-600", icon: "👍" };
-    if (bufferbloat < 300) return { level: "Acceptable", color: "text-yellow-600", icon: "⚠️" };
-    return { level: "Poor", color: "text-red-600", icon: "⛔" };
+  if (bufferbloat < 100) return { level: "Good", color: "text-green-600", icon: "" };
+  if (bufferbloat < 300) return { level: "Acceptable", color: "text-yellow-600", icon: "" };
+  return { level: "Poor", color: "text-red-600", icon: "" };
   };
 
   return (
@@ -257,7 +257,7 @@ export const BufferbloatTest: React.FC<BufferbloatTestProps> = ({
               className="space-y-4"
             >
               {/* Progress bar only during baseline */}
-              {progress.phase === "baseline" && (
+              {progress.phase === "ping_baseline" && (
                 <div className="space-y-2">
                   <div className="flex items-center justify-between">
                     <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
@@ -391,7 +391,7 @@ export const BufferbloatTest: React.FC<BufferbloatTestProps> = ({
                       const severity = getBufferbloatSeverity(result.downloadBufferbloat);
                       return (
                         <div className={`inline-flex items-center gap-2 px-3 py-2 rounded-full border ${severity.color} bg-opacity-10`}>
-                          <span className="text-lg">{severity.icon}</span>
+                          {/* Removed emoji icon */}
                           <span className="font-medium">{result.downloadSeverity}</span>
                         </div>
                       );
@@ -571,7 +571,7 @@ export const BufferbloatTest: React.FC<BufferbloatTestProps> = ({
           {error && (
             <div className="p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
               <div className="flex items-start gap-3">
-                <div className="text-red-600 dark:text-red-400">⚠️</div>
+                {/* Removed emoji icon */}
                 <div>
                   <div className="font-medium text-red-800 dark:text-red-200">Test Failed</div>
                   <div className="text-sm text-red-600 dark:text-red-400 mt-1">{error}</div>

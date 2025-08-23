@@ -19,6 +19,8 @@ type TestOptions struct {
 	UseLibrespeed    bool     `json:"useLibrespeed"`
 	ServerHost       string   `json:"serverHost"`
 	ServerName       string   `json:"serverName"`
+	ServerCity       string   `json:"serverCity"`
+	IsBufferbloat    bool     `json:"isBufferbloat"` // Flag to indicate this is part of a bufferbloat test
 }
 
 type SpeedUpdate struct {
@@ -396,4 +398,34 @@ type MonitorHistoricalSnapshot struct {
 	PeriodType    string    `db:"period_type" json:"periodType"` // 'hourly', 'daily', 'monthly'
 	DataJSON      string    `db:"data_json" json:"dataJson"`
 	CreatedAt     time.Time `db:"created_at" json:"createdAt"`
+}
+
+// BufferbloatResult represents the result of a bufferbloat test
+type BufferbloatResult struct {
+	ID                     int64     `db:"id" json:"id"`
+	PingTarget             string    `db:"ping_target" json:"pingTarget"`
+	BaselineRTT            float64   `db:"baseline_rtt" json:"baselineRtt"`
+	BaselineJitter         float64   `db:"baseline_jitter" json:"baselineJitter"`
+	DownloadRTT            float64   `db:"download_rtt" json:"downloadRtt"`
+	DownloadJitter         float64   `db:"download_jitter" json:"downloadJitter"`
+	UploadRTT              float64   `db:"upload_rtt" json:"uploadRtt"`
+	UploadJitter           float64   `db:"upload_jitter" json:"uploadJitter"`
+	DownloadBufferbloat    float64   `db:"download_bufferbloat" json:"downloadBufferbloat"`
+	UploadBufferbloat      float64   `db:"upload_bufferbloat" json:"uploadBufferbloat"`
+	DownloadBufferbloatPct float64   `db:"download_bufferbloat_pct" json:"downloadBufferbloatPct"`
+	UploadBufferbloatPct   float64   `db:"upload_bufferbloat_pct" json:"uploadBufferbloatPct"`
+	DownloadSeverity       string    `db:"download_severity" json:"downloadSeverity"`
+	UploadSeverity         string    `db:"upload_severity" json:"uploadSeverity"`
+	DownloadSpeed          float64   `db:"download_speed" json:"downloadSpeed"`
+	UploadSpeed            float64   `db:"upload_speed" json:"uploadSpeed"`
+	IsScheduled            bool      `db:"is_scheduled" json:"isScheduled"`
+	Timestamp              time.Time `db:"created_at" json:"timestamp"`
+}
+
+// PaginatedBufferbloatTests represents paginated bufferbloat test results
+type PaginatedBufferbloatTests struct {
+	Data  []BufferbloatResult `json:"data"`
+	Total int                 `json:"total"`
+	Page  int                 `json:"page"`
+	Limit int                 `json:"limit"`
 }

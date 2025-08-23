@@ -27,6 +27,15 @@ func NewResultHandler(db database.Service, notifier *notifications.Notifier) *De
 }
 
 func (h *DefaultResultHandler) SaveResult(ctx context.Context, result *Result, testType string, opts *types.TestOptions) error {
+	// Skip saving to speedtest history if this is part of a bufferbloat test
+	if opts.IsBufferbloat {
+		log.Debug().
+			Str("test_type", testType).
+			Str("server", result.Server).
+			Msg("Skipping speedtest result save - this is part of a bufferbloat test")
+		return nil
+	}
+
 	log.Debug().
 		Str("test_type", testType).
 		Str("server", result.Server).

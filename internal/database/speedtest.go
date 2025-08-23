@@ -68,7 +68,7 @@ func (s *service) SaveSpeedTest(ctx context.Context, result types.SpeedTestResul
 }
 
 func (s *service) GetSpeedTests(ctx context.Context, timeRange string, page, limit int) (*types.PaginatedSpeedTests, error) {
-	baseQuery := s.sqlBuilder.Select().From("speed_tests")
+	baseQuery := s.sqlBuilder.Select().From("speed_tests").Where("test_type IS NULL OR (test_type != '' AND test_type != 'bufferbloat')")
 
 	if timeRange != "all" {
 		var timeExpr string
