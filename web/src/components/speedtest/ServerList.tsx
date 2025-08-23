@@ -355,15 +355,17 @@ export const ServerList: React.FC<ServerListProps> = ({
                         Run
                       </Button>
                       
-                      <Button
-                        variant="outline"
-                        onClick={() => setBufferbloatTestOpen(true)}
-                        disabled={isLoading || selectedServers.length === 0}
-                        className="flex-1 sm:flex-none sm:w-auto"
-                        title="Test for bufferbloat (network latency spikes during traffic bursts)"
-                      >
-                        Bufferbloat Test
-                      </Button>
+                      {testType === "speedtest" && (
+                        <Button
+                          variant="outline"
+                          onClick={() => setBufferbloatTestOpen(true)}
+                          disabled={isLoading || selectedServers.length === 0}
+                          className="flex-1 sm:flex-none sm:w-auto"
+                          title="Test for bufferbloat (network latency spikes during traffic bursts)"
+                        >
+                          Bufferbloat Test
+                        </Button>
+                      )}
                     </div>
                   </div>
 
