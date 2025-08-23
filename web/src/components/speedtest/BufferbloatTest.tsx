@@ -194,22 +194,41 @@ export const BufferbloatTest: React.FC<BufferbloatTestProps> = ({
           </DialogTitle>
         </DialogHeader>
 
-        <div className="space-y-6">
-          {/* Test Info */}
-          <div className="flex items-start gap-3 p-4 bg-blue-50/50 dark:bg-blue-900/20 rounded-lg border border-blue-200/50 dark:border-blue-800/50">
-            <AlertTriangle className="h-5 w-5 text-blue-600 dark:text-blue-400 mt-0.5 flex-shrink-0" />
-            <div className="text-sm">
-              <p className="text-gray-900 dark:text-gray-100 font-medium mb-1">
-                What is Bufferbloat?
-              </p>
-              <p className="text-gray-600 dark:text-gray-400">
-                Bufferbloat occurs when network equipment buffers too much data, causing high latency during traffic bursts. 
-                This test measures RTT increase during a speed test to identify bufferbloat issues.
-              </p>
+        {/* Show info cards only when not displaying results */}
+        {!result && !(progress.phase === "complete" && progress.bufferbloat !== undefined) && (
+          <div className="space-y-6">
+            {/* Test Info */}
+            <div className="flex items-start gap-3 p-4 bg-blue-50/50 dark:bg-blue-900/20 rounded-lg border border-blue-200/50 dark:border-blue-800/50">
+              <AlertTriangle className="h-5 w-5 text-blue-600 dark:text-blue-400 mt-0.5 flex-shrink-0" />
+              <div className="text-sm">
+                <p className="text-gray-900 dark:text-gray-100 font-medium mb-1">
+                  What is Bufferbloat?
+                </p>
+                <p className="text-gray-600 dark:text-gray-400">
+                  Bufferbloat occurs when network equipment buffers too much data, causing high latency during traffic bursts. 
+                  This test measures RTT increase during a speed test to identify bufferbloat issues.
+                </p>
+              </div>
+            </div>
+
+            {/* Testing Info */}
+            <div className="flex items-start gap-3 p-4 bg-yellow-50/50 dark:bg-yellow-900/20 rounded-lg border border-yellow-200/50 dark:border-yellow-800/50">
+              <AlertTriangle className="h-5 w-5 text-yellow-600 dark:text-yellow-400 mt-0.5 flex-shrink-0" />
+              <div className="text-sm">
+                <p className="text-gray-900 dark:text-gray-100 font-medium mb-1">
+                  Testing
+                </p>
+                <p className="text-gray-600 dark:text-gray-400">
+                  For best results, have an otherwise idle network during the test.
+                  Use a speedtest server that can saturate your connection.
+                  Choose a ping target with the lowest latency to your location.
+                </p>
+              </div>
             </div>
           </div>
+        )}
 
-          {/* Server Selection Display */}
+        <div className="space-y-6">
           {selectedServer && (
             <Card>
               <CardHeader className="pb-3">
