@@ -41,31 +41,51 @@ export const PacketLossMonitorDetails: React.FC<
     setPerformanceTimeRange(range);
   };
 
+  // Get the limit based on the time range
+  const getHistoryLimit = (range: PerformanceTimeRange): number => {
+    const limit = (() => {
+      switch (range) {
+        case "10": return 10;
+        case "30": return 30;
+        case "50": return 50;
+        case "100": return 100;
+        case "500": return 500;
+        case "1000": return 1000;
+        case "all": return 0; // 0 means no limit (backend will cap at 2000)
+        default: return 100;
+      }
+    })();
+    console.log(`getHistoryLimit: range=${range}, limit=${limit}`);
+    return limit;
+  };
+
+  const historyLimit = getHistoryLimit(performanceTimeRange);
+
   // Fetch history for selected monitor
-  const { data: monitorHistory } = useQuery({
-    queryKey: ["packetloss", "history", selectedMonitor.id],
-    queryFn: () => getPacketLossHistory(selectedMonitor.id, 100),
+  const { data: monitorHistory, refetch } = useQuery({
+    queryKey: ["packetloss", "history", selectedMonitor.id, historyLimit],
+    queryFn: () => {
+      console.log(`Fetching history for monitor ${selectedMonitor.id} with limit ${historyLimit}`);
+      return getPacketLossHistory(selectedMonitor.id, historyLimit);
+    },
     staleTime: 5000, // Consider data stale after 5 seconds
     refetchInterval: false, // Don't refetch automatically
   });
 
   // Ensure monitorHistory is always an array
   const historyList = monitorHistory || [];
+  console.log(`historyList length: ${historyList.length}, performanceTimeRange: ${performanceTimeRange}`);
 
-  // Fetch fresh history when monitor is selected
+  // Fetch fresh history when monitor is selected or time range changes
   useEffect(() => {
-    // Fetch fresh data and update cache directly
-    getPacketLossHistory(selectedMonitor.id, 100)
-      .then((freshHistory) => {
-        queryClient.setQueryData(
-          ["packetloss", "history", selectedMonitor.id],
-          freshHistory,
-        );
-      })
-      .catch((error) => {
-        console.error("Failed to fetch monitor history:", error);
-      });
-  }, [selectedMonitor, queryClient]);
+    // Invalidate and refetch the query when time range changes
+    queryClient.invalidateQueries({
+      queryKey: ["packetloss", "history", selectedMonitor.id],
+    });
+    
+    // Force a refetch with the new limit
+    refetch();
+  }, [selectedMonitor, historyLimit, queryClient, refetch]);
 
   const status = monitorStatuses.get(selectedMonitor.id);
   const showStatus =

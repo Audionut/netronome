@@ -230,11 +230,12 @@ func (h *PacketLossHandler) GetMonitorHistory(c *gin.Context) {
 	// Get limit from query parameter
 	limitStr := c.DefaultQuery("limit", "100")
 	limit, err := strconv.Atoi(limitStr)
-	if err != nil || limit <= 0 {
+	if err != nil || limit < 0 {
 		limit = 100
 	}
-	if limit > 1000 {
-		limit = 1000 // Cap at 1000 results
+	// Allow limit = 0 to mean "no limit" but cap at 2000 for safety
+	if limit == 0 || limit > 2000 {
+		limit = 2000
 	}
 
 	results, err := h.db.GetPacketLossResults(id, limit)
@@ -280,13 +281,13 @@ func (h *PacketLossHandler) StartMonitor(c *gin.Context) {
 	// Update last_run and next_run times before running the test
 	now := time.Now()
 	monitor.LastRun = &now
-	
+
 	// Calculate next run time based on the interval
 	nextRun := h.scheduler.CalculateNextRun(monitor.Interval, now)
 	if !nextRun.IsZero() {
 		monitor.NextRun = &nextRun
 	}
-	
+
 	// Update the monitor with new schedule times
 	if err := h.db.UpdatePacketLossMonitor(monitor); err != nil {
 		log.Error().Err(err).Int64("monitorID", id).Msg("Failed to update monitor schedule")

@@ -76,13 +76,13 @@ export const getPacketLossHistory = async (
   id: number,
   limit: number = 100,
 ): Promise<PacketLossResult[]> => {
-  const response = await fetch(
-    getApiUrl(`/packetloss/monitors/${id}/history?limit=${limit}`),
-  );
+  const url = getApiUrl(`/packetloss/monitors/${id}/history?limit=${limit}`);
+  const response = await fetch(url);
   if (!response.ok) {
     throw new Error("Failed to fetch monitor history");
   }
-  return response.json();
+  const result = await response.json();
+  return result;
 };
 
 export const startPacketLossMonitor = async (id: number): Promise<void> => {

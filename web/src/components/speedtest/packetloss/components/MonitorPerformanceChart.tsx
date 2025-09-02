@@ -24,7 +24,7 @@ import {
 import { PacketLossResult } from "@/types/types";
 
 // Define filter range type for performance charts
-export type PerformanceTimeRange = "10" | "30" | "50" | "100" | "all";
+export type PerformanceTimeRange = "10" | "30" | "50" | "100" | "500" | "1000" | "all";
 
 interface MonitorPerformanceChartProps {
   historyList: PacketLossResult[];
@@ -42,6 +42,8 @@ export const MonitorPerformanceChart: React.FC<
     { value: "30", label: "Last 30 results" },
     { value: "50", label: "Last 50 results" },
     { value: "100", label: "Last 100 results" },
+    { value: "500", label: "Last 500 results" },
+    { value: "1000", label: "Last 1000 results" },
     { value: "all", label: "All results" },
   ];
 
@@ -52,6 +54,8 @@ export const MonitorPerformanceChart: React.FC<
       case "30": return 30;
       case "50": return 50;
       case "100": return 100;
+      case "500": return 500;
+      case "1000": return 1000;
       case "all": return historyList.length;
       default: return 30;
     }
