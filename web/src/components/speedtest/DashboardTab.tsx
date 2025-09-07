@@ -11,6 +11,7 @@ import { SpeedTestResult, TimeRange } from "@/types/types";
 import { formatters } from "@/utils/timeSettings";
 import { subscribeToShowCitySetting } from "@/utils/serverDisplay";
 import { SpeedHistoryChart } from "./SpeedHistoryChart";
+import { NetworkMonitorWidget } from "./NetworkMonitorWidget";
 import { MetricCard } from "@/components/common/MetricCard";
 import { FeaturedMonitorWidget } from "@/components/monitor/FeaturedMonitorWidget";
 import {
@@ -103,7 +104,7 @@ const SortableItem: React.FC<SortableItemProps> = ({
     <div ref={setNodeRef} style={style} {...attributes}>
       {React.cloneElement(children as React.ReactElement<DragHandleProps>, {
         dragHandleRef: setActivatorNodeRef,
-        dragHandleListeners: listeners,
+        dragHandleListeners: listeners as any,
         dragHandleClassName,
       })}
     </div>
@@ -156,6 +157,20 @@ const DraggableSpeedHistoryChart: React.FC<DraggableSpeedHistoryChartProps> = ({
   );
 };
 
+// Wrapper component for NetworkMonitorWidget with drag handle
+const DraggableNetworkMonitorWidget: React.FC<DragHandleProps> = () => {
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, y: 20 }}
+      transition={{ duration: 0.5 }}
+    >
+      <NetworkMonitorWidget />
+    </motion.div>
+  );
+};
+
 export const DashboardTab: React.FC<DashboardTabProps> = ({
   latestTest,
   tests,
@@ -175,8 +190,8 @@ export const DashboardTab: React.FC<DashboardTabProps> = ({
 
   // Initialize section order from localStorage or default
   const [sectionOrder, setSectionOrder] = useState<string[]>(() => {
-    const saved = localStorage.getItem("dashboard-section-order");
-    return saved ? JSON.parse(saved) : ["history", "recent"];
+    const saved = localStorage.getItem("dashboard-section-order-v2");
+    return saved ? JSON.parse(saved) : ["history", "network-monitor", "recent"];
   });
 
   // State for share button hover
@@ -207,7 +222,7 @@ export const DashboardTab: React.FC<DashboardTabProps> = ({
   // Persist section order to localStorage
   useEffect(() => {
     localStorage.setItem(
-      "dashboard-section-order",
+      "dashboard-section-order-v2",
       JSON.stringify(sectionOrder)
     );
   }, [sectionOrder]);
@@ -463,6 +478,12 @@ export const DashboardTab: React.FC<DashboardTabProps> = ({
                         multipleServerDisplayMode={multipleServerDisplayMode}
                         onMultipleServerDisplayModeChange={setMultipleServerDisplayMode}
                       />
+                    </SortableItem>
+                  );
+                } else if (sectionId === "network-monitor") {
+                  return (
+                    <SortableItem key="network-monitor" id="network-monitor">
+                      <DraggableNetworkMonitorWidget />
                     </SortableItem>
                   );
                 } else if (sectionId === "recent" && tests.length > 0) {
