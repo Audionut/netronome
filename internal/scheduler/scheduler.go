@@ -6,7 +6,6 @@ package scheduler
 import (
 	"context"
 	"math"
-	"math/rand"
 	"strconv"
 	"strings"
 	"sync"
@@ -28,23 +27,28 @@ type Service interface {
 }
 
 type service struct {
-	db         database.Service
-	speedtest  speedtest.Service
-	packetLoss *speedtest.PacketLossService
-	notifier   *notifications.Notifier
-	ticker     *time.Ticker
-	done       chan bool
-	mu         sync.Mutex
-	running    bool
+	db                 database.Service
+	speedtest          speedtest.Service
+	packetLoss         *speedtest.PacketLossService
+	notifier           *notifications.Notifier
+	ticker             *time.Ticker
+	done               chan bool
+	mu                 sync.Mutex
+	running            bool
+	concurrencySem     chan struct{} // Limits concurrent packet loss tests
+	maxConcurrentTests int
 }
 
 func New(db database.Service, speedtest speedtest.Service, packetLoss *speedtest.PacketLossService, notifier *notifications.Notifier) Service {
+	maxConcurrent := 10 // Allow up to 10 concurrent packet loss tests
 	return &service{
-		db:         db,
-		speedtest:  speedtest,
-		packetLoss: packetLoss,
-		notifier:   notifier,
-		done:       make(chan bool),
+		db:                 db,
+		speedtest:          speedtest,
+		packetLoss:         packetLoss,
+		notifier:           notifier,
+		done:               make(chan bool),
+		concurrencySem:     make(chan struct{}, maxConcurrent),
+		maxConcurrentTests: maxConcurrent,
 	}
 }
 
@@ -339,9 +343,8 @@ func (s *service) calculateNextRun(interval string, from time.Time) time.Time {
 			return time.Time{}
 		}
 
-		// Add small random jitter (1-60 seconds) to prevent thundering herd
-		jitter := time.Duration(rand.Int63n(60)+1) * time.Second
-		return nextRun.Add(jitter)
+		// Return precise time - concurrency limiting handles thundering herd
+		return nextRun
 	} else {
 		// Parse as duration - normalize custom units first
 		normalizedInterval := s.normalizeDuration(interval)
@@ -350,9 +353,8 @@ func (s *service) calculateNextRun(interval string, from time.Time) time.Time {
 			return time.Time{}
 		}
 
-		// Add small random jitter (1-300 seconds) to prevent thundering herd
-		jitter := time.Duration(rand.Int63n(300)+1) * time.Second
-		return from.Add(duration).Add(jitter)
+		// Return precise time - concurrency limiting handles thundering herd
+		return from.Add(duration)
 	}
 }
 
@@ -428,49 +430,139 @@ func (s *service) checkAndRunPacketLossMonitors(ctx context.Context) {
 		return
 	}
 
-	now := time.Now()
+	now := time.Now().UTC()
+	log.Info().
+		Time("scheduler_check_time_utc", now).
+		Int("total_monitors", len(monitors)).
+		Msg("Checking packet loss monitors for due tests")
+
 	for _, monitor := range monitors {
-		if !monitor.Enabled || monitor.NextRun == nil || monitor.NextRun.After(now) {
+		if !monitor.Enabled {
+			log.Debug().
+				Int64("monitor_id", monitor.ID).
+				Str("host", monitor.Host).
+				Msg("Monitor disabled, skipping")
 			continue
 		}
 
+		if monitor.NextRun == nil {
+			log.Warn().
+				Int64("monitor_id", monitor.ID).
+				Str("host", monitor.Host).
+				Msg("Monitor has nil NextRun, skipping")
+			continue
+		}
+
+		nextRunUTC := monitor.NextRun.UTC()
+		isOverdue := nextRunUTC.Before(now) || nextRunUTC.Equal(now)
+		timeDiff := nextRunUTC.Sub(now)
+
+		if !isOverdue {
+			log.Debug().
+				Int64("monitor_id", monitor.ID).
+				Str("host", monitor.Host).
+				Time("next_run_utc", nextRunUTC).
+				Time("now_utc", now).
+				Dur("time_until_due", timeDiff).
+				Msg("Monitor not yet due")
+			continue
+		}
+
+		// Store the scheduled start time to calculate proper next_run
+		scheduledStartTime := nextRunUTC
 		log.Info().
 			Int64("monitor_id", monitor.ID).
 			Str("host", monitor.Host).
-			Time("next_run", *monitor.NextRun).
+			Time("scheduled_start_time_utc", scheduledStartTime).
+			Time("actual_start_time_utc", now).
+			Dur("delay", now.Sub(scheduledStartTime)).
 			Str("interval", monitor.Interval).
-			Msg("Running scheduled packet loss test")
+			Msg("Starting scheduled packet loss test")
 
 		// Create a timeout context for the test
 		testCtx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
-		go func(monitor *types.PacketLossMonitor, ctx context.Context, cancel context.CancelFunc) {
+		go func(monitor *types.PacketLossMonitor, scheduledStart time.Time, ctx context.Context, cancel context.CancelFunc) {
 			defer cancel()
+
+			// Acquire semaphore to limit concurrent tests
+			select {
+			case s.concurrencySem <- struct{}{}:
+				// Successfully acquired semaphore
+				defer func() { <-s.concurrencySem }() // Release semaphore when done
+			case <-ctx.Done():
+				log.Warn().
+					Int64("monitor_id", monitor.ID).
+					Str("host", monitor.Host).
+					Msg("Test cancelled while waiting for concurrency slot")
+				return
+			}
+
+			testStartTime := time.Now().UTC()
+			log.Info().
+				Int64("monitor_id", monitor.ID).
+				Str("host", monitor.Host).
+				Time("test_start_time_utc", testStartTime).
+				Int("concurrent_tests", len(s.concurrencySem)).
+				Int("max_concurrent", s.maxConcurrentTests).
+				Msg("Executing packet loss test")
 
 			// Run the packet loss test
 			if s.packetLoss != nil {
 				s.packetLoss.RunScheduledTest(monitor)
 			}
 
-			// Calculate and update next run time
-			nextRun := s.calculateNextRun(monitor.Interval, now)
+			testCompletionTime := time.Now().UTC()
+			testDuration := testCompletionTime.Sub(testStartTime)
+
+			// Calculate next run from the SCHEDULED start time + interval
+			// This ensures consistent intervals regardless of test duration or delays
+			nextRun := s.calculateNextRun(monitor.Interval, scheduledStart)
 			if nextRun.IsZero() {
 				log.Error().
 					Int64("monitor_id", monitor.ID).
 					Str("interval", monitor.Interval).
+					Time("scheduled_start", scheduledStart).
 					Msg("Error calculating next run time for monitor")
 				return
 			}
 
-			monitor.LastRun = &now
+			// If next run would be in the past (test took too long), schedule for immediate next cycle
+			if nextRun.Before(testCompletionTime) {
+				log.Warn().
+					Int64("monitor_id", monitor.ID).
+					Str("host", monitor.Host).
+					Time("calculated_next_run", nextRun).
+					Time("test_completion_time", testCompletionTime).
+					Dur("test_duration", testDuration).
+					Msg("Test overran scheduled interval, scheduling for next cycle")
+				nextRun = testCompletionTime.Add(1 * time.Minute)
+			}
+
+			monitor.LastRun = &scheduledStart
 			monitor.NextRun = &nextRun
+
+			log.Info().
+				Int64("monitor_id", monitor.ID).
+				Str("host", monitor.Host).
+				Time("last_run_utc", *monitor.LastRun).
+				Time("next_run_utc", *monitor.NextRun).
+				Dur("test_duration", testDuration).
+				Dur("next_run_in", nextRun.Sub(testCompletionTime)).
+				Str("interval", monitor.Interval).
+				Msg("Updated monitor schedule after test completion")
 
 			if err := s.db.UpdatePacketLossMonitor(monitor); err != nil {
 				log.Error().
 					Err(err).
 					Int64("monitor_id", monitor.ID).
 					Msg("Error updating monitor schedule")
+			} else {
+				log.Debug().
+					Int64("monitor_id", monitor.ID).
+					Time("next_run_utc", nextRun).
+					Msg("Successfully updated monitor schedule in database")
 			}
-		}(monitor, testCtx, cancel)
+		}(monitor, scheduledStartTime, testCtx, cancel)
 	}
 }
 
