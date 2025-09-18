@@ -75,6 +75,7 @@ func buildMTRArgs(host string, packetCount int, privilegedMode bool) ([]string, 
 		"-n",                                 // No DNS lookups (numeric output only)
 		"-c", fmt.Sprintf("%d", packetCount), // Number of cycles
 		"-i", "1", // 1 second interval
+		"-t", "2", // 2 second timeout per hop to prevent hanging on unresponsive hops
 	}
 
 	// Add UDP mode if not privileged (Windows MTR defaults to ICMP in privileged mode)
