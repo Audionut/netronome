@@ -1014,7 +1014,7 @@ func (s *PacketLossService) runMTRTest(monitor *PacketLossMonitor) (*probing.Sta
 	}
 
 	// Create timeout context
-	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(monitor.PacketCount*3)*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(monitor.PacketCount*6)*time.Second)
 	defer cancel()
 
 	// Build platform-specific MTR command arguments

@@ -14,6 +14,7 @@ import {
   ResponsiveContainer,
 } from "recharts";
 import { PacketLossResult } from "@/types/types";
+import { formatters } from "@/utils/timeSettings";
 
 interface MonitorPerformanceChartProps {
   historyList: PacketLossResult[];
@@ -32,13 +33,8 @@ export const MonitorPerformanceChart: React.FC<
       .map((result) => {
         const date = new Date(result.createdAt);
 
-        // Use consistent formatting for all data points
-        const timeLabel = date.toLocaleString(undefined, {
-          month: "numeric",
-          day: "numeric",
-          hour: "numeric",
-          minute: "2-digit",
-        });
+        // Use timezone-aware formatting for all data points
+        const timeLabel = formatters.chartTick(date, "1d");
 
         return {
           time: timeLabel,
@@ -51,6 +47,28 @@ export const MonitorPerformanceChart: React.FC<
 
     return data;
   }, [historyList]);
+
+  // Calculate RTT statistics for better axis scaling
+  const rttStats = useMemo(() => {
+    if (chartData.length === 0) return null;
+    
+    const allRttValues = chartData.flatMap(d => [d.avgRtt, d.minRtt, d.maxRtt]).filter(v => v > 0);
+    if (allRttValues.length === 0) return null;
+    
+    const min = Math.min(...allRttValues);
+    const max = Math.max(...allRttValues);
+    const avg = allRttValues.reduce((sum, val) => sum + val, 0) / allRttValues.length;
+    
+    // Calculate a good range around the data
+    const range = max - min;
+    const padding = Math.max(range * 0.1, 5); // 10% padding or 5ms minimum
+    
+    return {
+      min: Math.max(0, min - padding),
+      max: max + padding,
+      avg
+    };
+  }, [chartData]);
 
   if (chartData.length === 0) {
     return null;
@@ -65,6 +83,11 @@ export const MonitorPerformanceChart: React.FC<
         <div className="flex items-center justify-between">
           <p className="text-gray-600 dark:text-gray-400 text-xs">
             Last 30 tests • {chartData.length} data points
+            {rttStats && (
+              <span className="ml-2 text-blue-600 dark:text-blue-400">
+                • Avg RTT: {rttStats.avg.toFixed(1)}ms
+              </span>
+            )}
           </p>
           <div className="flex items-center gap-4 text-xs text-gray-600 dark:text-gray-400">
             <div className="flex items-center gap-1">
@@ -113,6 +136,9 @@ export const MonitorPerformanceChart: React.FC<
               fontSize={11}
               axisLine={false}
               tickLine={false}
+              scale="linear"
+              domain={rttStats ? [Math.floor(rttStats.min), Math.ceil(rttStats.max)] : ['dataMin', 'dataMax']}
+              allowDataOverflow={false}
               label={{
                 value: "RTT (ms)",
                 angle: -90,
@@ -130,6 +156,8 @@ export const MonitorPerformanceChart: React.FC<
               fontSize={11}
               axisLine={false}
               tickLine={false}
+              scale="linear"
+              domain={[0, 100]}
               label={{
                 value: "Packet Loss (%)",
                 angle: 90,
